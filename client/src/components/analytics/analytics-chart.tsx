@@ -50,6 +50,27 @@ export function AnalyticsChart({
     );
   }
 
+  if (!data || data.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-lg font-medium flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="h-64 flex items-center justify-center bg-muted/50 rounded-md">
+            <div className="text-center">
+              <Activity className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+              <p className="text-sm text-muted-foreground">No data available</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const Chart = type === "area" ? AreaChart : LineChart;
 
   return (

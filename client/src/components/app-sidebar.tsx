@@ -1,4 +1,5 @@
 import { useLocation } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import {
   Camera,
   LayoutDashboard,
@@ -25,49 +26,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar";
 import { Badge } from "@/components/ui/badge";
-
-const mainNavItems = [
-  {
-    title: "Dashboard",
-    url: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Cameras",
-    url: "/cameras",
-    icon: Camera,
-    badge: "46",
-  },
-  {
-    title: "Analytics",
-    url: "/analytics",
-    icon: Activity,
-  },
-  {
-    title: "Shopping Mall",
-    url: "/shopping-mall",
-    icon: ShoppingBag,
-    badge: "LIVE",
-  },
-  {
-    title: "High School",
-    url: "/high-school",
-    icon: GraduationCap,
-    badge: "NEW",
-  },
-  {
-    title: "Moscow University",
-    url: "/moscow-university",
-    icon: Building,
-    badge: "NEW",
-  },
-  {
-    title: "Events",
-    url: "/events",
-    icon: Bell,
-    badge: "3",
-  },
-];
+import type { Camera as CameraType, AnalyticsEvent } from "@shared/schema";
 
 const managementItems = [
   {
@@ -89,6 +48,58 @@ const managementItems = [
 
 export function AppSidebar() {
   const [location] = useLocation();
+
+  // Fetch dynamic data for badges
+  const { data: cameras = [] } = useQuery<CameraType[]>({
+    queryKey: ["/api/cameras"],
+  });
+
+  const { data: recentEvents = [] } = useQuery<AnalyticsEvent[]>({
+    queryKey: ["/api/analytics/events/recent"],
+  });
+
+  const mainNavItems = [
+    {
+      title: "Dashboard",
+      url: "/",
+      icon: LayoutDashboard,
+    },
+    {
+      title: "Cameras",
+      url: "/cameras",
+      icon: Camera,
+      badge: cameras.length > 0 ? cameras.length.toString() : undefined,
+    },
+    {
+      title: "Analytics",
+      url: "/analytics",
+      icon: Activity,
+    },
+    {
+      title: "Shopping Mall",
+      url: "/shopping-mall",
+      icon: ShoppingBag,
+      badge: "LIVE",
+    },
+    {
+      title: "High School",
+      url: "/high-school",
+      icon: GraduationCap,
+      badge: "NEW",
+    },
+    {
+      title: "Moscow University",
+      url: "/moscow-university",
+      icon: Building,
+      badge: "NEW",
+    },
+    {
+      title: "Events",
+      url: "/events",
+      icon: Bell,
+      badge: recentEvents.length > 0 ? recentEvents.length.toString() : undefined,
+    },
+  ];
 
   return (
     <Sidebar>

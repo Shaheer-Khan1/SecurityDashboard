@@ -48,8 +48,6 @@ export default function AnalyticsPage() {
   const activeConfigs = configs.filter((c) => c.active);
   const workingConfigs = configs.filter((c) => c.working);
 
-  const mockChartData = chartData.length > 0 ? chartData : generateMockChartData();
-
   return (
     <div className="space-y-6 p-6">
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -105,7 +103,7 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-muted-foreground">People Counted</p>
                 <p className="text-2xl font-bold" data-testid="stat-people-counted">
-                  {counters.find(c => c.name.includes("People"))?.value.toLocaleString() || "1,247"}
+                  {countersLoading ? "..." : (counters.find(c => c.name.includes("People"))?.value.toLocaleString() || "N/A")}
                 </p>
               </div>
             </div>
@@ -120,7 +118,7 @@ export default function AnalyticsPage() {
               <div>
                 <p className="text-sm text-muted-foreground">Vehicles Detected</p>
                 <p className="text-2xl font-bold" data-testid="stat-vehicles-detected">
-                  {counters.find(c => c.name.includes("Vehicle"))?.value.toLocaleString() || "892"}
+                  {countersLoading ? "..." : (counters.find(c => c.name.includes("Vehicle"))?.value.toLocaleString() || "N/A")}
                 </p>
               </div>
             </div>
@@ -138,12 +136,12 @@ export default function AnalyticsPage() {
         <TabsContent value="overview" className="space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <AnalyticsChart
-              data={mockChartData}
+              data={chartData}
               title="Detection Trends"
               type="area"
             />
             <AnalyticsChart
-              data={mockChartData.map(d => ({ ...d, events: d.motion || 0, motion: undefined }))}
+              data={chartData.map(d => ({ ...d, events: d.motion || 0, motion: undefined }))}
               title="Motion Activity"
               type="line"
             />
@@ -166,7 +164,6 @@ export default function AnalyticsPage() {
                 <CounterCard
                   key={counter.id}
                   counter={counter}
-                  trend={Math.floor(Math.random() * 20) - 10}
                   onReset={(id) => resetCounterMutation.mutate(id)}
                 />
               ))
@@ -245,15 +242,4 @@ export default function AnalyticsPage() {
       </Tabs>
     </div>
   );
-}
-
-function generateMockChartData() {
-  return Array.from({ length: 24 }, (_, i) => {
-    const hour = (new Date().getHours() - 23 + i + 24) % 24;
-    return {
-      time: `${hour.toString().padStart(2, "0")}:00`,
-      events: Math.floor(Math.random() * 100) + 20,
-      motion: Math.floor(Math.random() * 60) + 10,
-    };
-  });
 }

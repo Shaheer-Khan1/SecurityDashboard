@@ -5,7 +5,7 @@ import { Server, Cpu, HardDrive, Clock } from "lucide-react";
 import type { SystemStatus } from "@shared/schema";
 
 interface SystemStatusCardProps {
-  status: SystemStatus;
+  status?: SystemStatus;
   isLoading?: boolean;
 }
 
@@ -16,7 +16,7 @@ const statusColors = {
 };
 
 export function SystemStatusCard({ status, isLoading }: SystemStatusCardProps) {
-  if (isLoading) {
+  if (isLoading || !status) {
     return (
       <Card>
         <CardHeader className="pb-2">

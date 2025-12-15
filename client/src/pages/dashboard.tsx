@@ -61,19 +61,6 @@ export default function Dashboard() {
         events: cam.recordingHours || 0,
       })) ?? [];
 
-  const defaultStats: DashboardStats = {
-    totalCameras: 16,
-    activeCameras: 14,
-    recordingCameras: 12,
-    offlineCameras: 2,
-    totalEvents: 1247,
-    criticalEvents: 3,
-    totalStorage: "4 TB",
-    usedStorage: "2.8 TB",
-  };
-
-  const displayStats = stats || defaultStats;
-
   return (
     <div className="space-y-6 p-6">
       <div>
@@ -86,30 +73,29 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard
           title="Total Cameras"
-          value={displayStats.totalCameras}
+          value={statsLoading ? "..." : stats?.totalCameras ?? "N/A"}
           icon={Camera}
-          description={`${displayStats.activeCameras} active`}
+          description={statsLoading ? "Loading..." : (stats?.activeCameras ? `${stats.activeCameras} active` : "No data")}
           variant="default"
         />
         <StatCard
           title="Recording"
-          value={displayStats.recordingCameras}
+          value={statsLoading ? "..." : stats?.recordingCameras ?? "N/A"}
           icon={Video}
-          trend={{ value: 8, isPositive: true }}
           variant="success"
         />
         <StatCard
           title="Critical Events"
-          value={displayStats.criticalEvents}
+          value={statsLoading ? "..." : stats?.criticalEvents ?? "N/A"}
           icon={AlertTriangle}
           description="Last 24 hours"
           variant="danger"
         />
         <StatCard
           title="Storage Used"
-          value={displayStats.usedStorage}
+          value={statsLoading ? "..." : stats?.usedStorage ?? "N/A"}
           icon={HardDrive}
-          description={`of ${displayStats.totalStorage}`}
+          description={statsLoading ? "Loading..." : (stats?.totalStorage ? `of ${stats.totalStorage}` : "No data")}
           variant="warning"
         />
       </div>
@@ -117,21 +103,14 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <AnalyticsChart
-            data={chartData.length > 0 ? chartData : generateMockChartData()}
+            data={chartData}
             isLoading={chartLoading}
             title="Event Activity (24h)"
           />
         </div>
         <div>
           <SystemStatusCard
-            status={systemStatus || {
-              serverStatus: "online",
-              cpuUsage: 45,
-              memoryUsage: 62,
-              diskUsage: 70,
-              uptime: "14d 6h 32m",
-              lastSync: "2 min ago",
-            }}
+            status={systemStatus}
             isLoading={statusLoading}
           />
         </div>
@@ -157,17 +136,17 @@ export default function Dashboard() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-lg font-medium">Camera Feeds</h2>
-                  <a
-                    href="/cameras"
-                    className="text-sm text-primary hover:underline"
-                    data-testid="link-view-all-cameras"
-                  >
-                    View all cameras
-                  </a>
-                </div>
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium">Camera Feeds</h2>
+              <a
+                href="/cameras"
+                className="text-sm text-primary hover:underline"
+                data-testid="link-view-all-cameras"
+              >
+                View all cameras
+              </a>
+            </div>
                 <div className="divide-y divide-border rounded-lg border bg-card">
                   {cameras.slice(0, 6).map((camera) => (
                     <a
@@ -213,10 +192,10 @@ export default function Dashboard() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-            <div>
-              <RecentEvents events={recentEvents.slice(0, 8)} isLoading={eventsLoading} />
+          </div>
+        </div>
+        <div>
+          <RecentEvents events={recentEvents.slice(0, 8)} isLoading={eventsLoading} />
             </div>
           </div>
         </div>
@@ -228,16 +207,4 @@ export default function Dashboard() {
       </div>
     </div>
   );
-}
-
-function generateMockChartData() {
-  const hours = Array.from({ length: 24 }, (_, i) => {
-    const hour = (new Date().getHours() - 23 + i + 24) % 24;
-    return {
-      time: `${hour.toString().padStart(2, "0")}:00`,
-      events: Math.floor(Math.random() * 50) + 10,
-      motion: Math.floor(Math.random() * 30) + 5,
-    };
-  });
-  return hours;
 }
