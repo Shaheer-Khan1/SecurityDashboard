@@ -51,7 +51,10 @@ export function CameraCard({ camera, onActivate, onViewFullscreen }: CameraCardP
   const isRecording = status === "recording";
 
   return (
-    <Card className="overflow-hidden group" data-testid={`camera-card-${camera.name}`}>
+    <Card
+      className="overflow-hidden group min-w-[220px]"
+      data-testid={`camera-card-${camera.name}`}
+    >
       <div className="relative aspect-video bg-muted">
         <div className="absolute inset-0 flex items-center justify-center">
           <Camera className="h-12 w-12 text-muted-foreground/30" />

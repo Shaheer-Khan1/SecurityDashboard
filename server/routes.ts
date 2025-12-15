@@ -1,145 +1,228 @@
-import type { Express } from "express";
-import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import type { Express, Response as ExpressResponse } from "express";
+import { type Server } from "http";
+import { addAuthToUrl, getBasicAuthHeader } from "./auth";
 
-const MOCK_SERVER_URL = process.env.DIGIFORT_API_URL || "http://localhost:8089";
+const MOCK_SERVER_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
 
-async function proxyRequest(endpoint: string, options: RequestInit = {}) {
-  try {
-    const response = await fetch(`${MOCK_SERVER_URL}${endpoint}`, {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        ...options.headers,
-      },
-    });
+// Debug counters
+let proxyRequestLogCount = 0;
+let proxyRequestFirstFailure = false;
+
+function upstreamError(res: ExpressResponse, _error: unknown) {
+  res.status(502).json({ message: "Upstream API unavailable" });
+}
+
+/**
+ * Parse Digifort API response (handles both JSON and XML)
+ */
+async function parseDigifortResponse(response: Response): Promise<any> {
+  const contentType = response.headers.get("content-type") || "";
+  
+  if (contentType.includes("application/json") || contentType.includes("text/json")) {
     return await response.json();
+  } else {
+    // Try to parse as JSON first (might be JSON without proper content-type)
+    const text = await response.text();
+    
+    if (text.trim().startsWith("<?xml") || text.trim().startsWith("<Response")) {
+      // XML response - would need XML parser, but for now throw error with helpful message
+      throw new Error(`XML response not yet fully supported. Response: ${text.substring(0, 500)}`);
+    }
+    
+    // Try to parse as JSON
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error(`Unsupported response format. Content-Type: ${contentType}, Response: ${text.substring(0, 500)}`);
+    }
+  }
+}
+
+/**
+ * Transform Digifort camera object to frontend schema format
+ * Digifort API uses capitalized fields (Name, Active, Group) -> frontend expects lowercase (name, active, group)
+ */
+function transformCamera(camera: any): any {
+  if (!camera) return null;
+  
+  return {
+    name: camera.Name || camera.name || "",
+    active: camera.Active !== undefined ? camera.Active : (camera.active !== undefined ? camera.active : false),
+    model: camera.Model || camera.model,
+    deviceType: camera.DeviceType !== undefined ? String(camera.DeviceType) : camera.deviceType,
+    connectionAddress: camera.ConnectionAddress || camera.connectionAddress,
+    connectionPort: camera.ConnectionPort !== undefined ? Number(camera.ConnectionPort) : camera.connectionPort,
+    latitude: camera.Latitude !== undefined ? Number(camera.Latitude) : camera.latitude,
+    longitude: camera.Longitude !== undefined ? Number(camera.Longitude) : camera.longitude,
+    memo: camera.Memo || camera.memo,
+    group: camera.Group || camera.group,
+    status: camera.Status || camera.status,
+    working: camera.Working !== undefined ? camera.Working : camera.working,
+    recordingHours: camera.RecordingHours !== undefined ? Number(camera.RecordingHours) : camera.recordingHours,
+    description: camera.Description || camera.description,
+  };
+}
+
+/**
+ * Transform Digifort group object to frontend schema format
+ */
+function transformGroup(group: any): any {
+  if (!group) return null;
+  
+  return {
+    name: group.Name || group.name || "",
+    cameras: group.Cameras || group.cameras || [],
+    active: group.Active !== undefined ? group.Active : (group.active !== undefined ? group.active : false),
+  };
+}
+
+/**
+ * Extract data from Digifort API response structure
+ * Handles: { Response: { Data: { ... } } } or direct data
+ */
+function extractDigifortData(responseData: any, dataKey?: string): any {
+  // If response has Digifort structure: { Response: { Data: { ... } } }
+  if (responseData.Response?.Data) {
+    if (dataKey) {
+      return responseData.Response.Data[dataKey] || responseData.Response.Data;
+    }
+    return responseData.Response.Data;
+  }
+  
+  // If response is direct data
+  if (dataKey && responseData[dataKey]) {
+    return responseData[dataKey];
+  }
+  
+  // Return as-is
+  return responseData;
+}
+
+async function proxyRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
+  try {
+    // Add ResponseFormat=JSON to request JSON format explicitly
+    const separator = endpoint.includes("?") ? "&" : "?";
+    const endpointWithFormat = `${endpoint}${separator}ResponseFormat=JSON`;
+    
+    // Add authentication parameters to the endpoint URL (for Safe auth) or prepare Basic auth header
+    const authenticatedUrl = await addAuthToUrl(`${MOCK_SERVER_URL}${endpointWithFormat}`);
+    const basicAuthHeader = getBasicAuthHeader();
+    
+    // Prepare headers
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      ...options.headers as Record<string, string>,
+    };
+    
+    // Add Basic HTTP Authentication header if using Basic auth
+    if (basicAuthHeader) {
+      headers["Authorization"] = basicAuthHeader;
+    }
+    
+    // Debug: Log URL for first few requests (mask sensitive data)
+    if (proxyRequestLogCount < 3) {
+      const maskedUrl = authenticatedUrl.replace(/AuthData=[A-F0-9]+/i, 'AuthData=***');
+      console.log(`[PROXY] Request URL: ${maskedUrl}`);
+      console.log(`[PROXY] Auth Method: ${process.env.DIGIFORT_AUTH_METHOD || "basic"}`);
+      if (basicAuthHeader) {
+        const maskedAuth = basicAuthHeader.substring(0, 15) + "***";
+        console.log(`[PROXY] Authorization Header: ${maskedAuth}`);
+        console.log(`[PROXY] Using Basic HTTP Authentication`);
+      } else {
+        console.log(`[PROXY] ⚠️  No Authorization header!`);
+      }
+      proxyRequestLogCount++;
+    }
+    
+    const response = await fetch(authenticatedUrl, {
+      ...options,
+      headers,
+    });
+    
+    // Parse response to check for authentication errors in response body
+    const responseData = await parseDigifortResponse(response);
+    
+    // Check for authentication error (Code 101) in response body
+    // Digifort returns HTTP 200 but with Code 101 in response body for auth errors
+    if (responseData.Response?.Code === 101 || responseData.Code === 101) {
+      if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
+        // Only retry with Safe auth (Basic auth doesn't use sessions)
+        // Log the actual URL being used for debugging (first failure only)
+        if (!proxyRequestFirstFailure) {
+          const maskedUrl = authenticatedUrl.replace(/AuthData=[A-F0-9]+/i, 'AuthData=***');
+          console.log(`[PROXY] Authentication error (Code 101) for ${endpoint}`);
+          console.log(`[PROXY] Request URL: ${maskedUrl}`);
+          console.log(`[PROXY] Response:`, JSON.stringify(responseData, null, 2));
+          proxyRequestFirstFailure = true;
+        }
+        
+        console.log(`[PROXY] Clearing session and retrying ${endpoint}...`);
+        const { clearAuthSession } = await import("./auth");
+        await clearAuthSession(); // Wait for session clearing to complete
+        // Small delay to ensure new session is ready
+        await new Promise(resolve => setTimeout(resolve, 200));
+        // Retry once with new session
+        return await proxyRequest(endpoint, options, retryCount + 1);
+      } else {
+        // Already retried or using Basic auth, return the error response
+        console.error(`[PROXY] Authentication failed for ${endpoint}. This may indicate insufficient permissions or incorrect credentials.`);
+        console.error(`[PROXY] Response:`, JSON.stringify(responseData, null, 2));
+        return responseData;
+      }
+    }
+    
+    // Check HTTP status codes
+    if (response.status === 401 || response.status === 403) {
+      const errorText = await response.text();
+      
+      // Handle 401 Unauthorized specifically with detailed logging
+      if (response.status === 401) {
+        console.error(`[PROXY] 401 Unauthorized for ${endpoint}`);
+        console.error(`[PROXY] Response: ${errorText.substring(0, 500)}`);
+        
+        if (basicAuthHeader) {
+          const username = process.env.DIGIFORT_USERNAME || "NOT SET";
+          const password = process.env.DIGIFORT_PASSWORD || "";
+          const testHeader = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
+          console.error(`[PROXY] ⚠️  Basic auth header was sent but rejected by server.`);
+          console.error(`[PROXY]    Username: "${username}"`);
+          console.error(`[PROXY]    Password: ${password ? "***SET***" : "(empty - no password)"}`);
+          console.error(`[PROXY]    Auth Header: ${testHeader.substring(0, 20)}...`);
+          console.error(`[PROXY]    Verify credentials are correct for Digifort server at ${MOCK_SERVER_URL}`);
+        } else {
+          console.error(`[PROXY] ⚠️  No Authorization header was sent!`);
+          console.error(`[PROXY]    Set DIGIFORT_USERNAME environment variable`);
+        }
+        
+        throw new Error(`Authentication failed: 401 Unauthorized. Check credentials.`);
+      }
+      
+      if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
+        // Only retry with Safe auth (Basic auth failures are usually credential issues)
+        console.log(`[PROXY] Authentication failed (${response.status}) for ${endpoint}, clearing session and retrying...`);
+        const { clearAuthSession } = await import("./auth");
+        await clearAuthSession(); // Wait for session clearing to complete
+        await new Promise(resolve => setTimeout(resolve, 200));
+        return await proxyRequest(endpoint, options, retryCount + 1);
+      } else {
+        console.error(`[PROXY] Authentication failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+      }
+    }
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      
+      console.error(`[PROXY] Request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+    
+    return responseData;
   } catch (error) {
+    console.error(`[PROXY] Error in proxyRequest for ${endpoint}:`, error instanceof Error ? error.message : error);
     throw error;
   }
-}
-
-const mockCameras = [
-  { name: "Camera 1 - Main Entrance", active: true, model: "Axis P3245-V", group: "Entrance", status: "recording", working: true, recordingHours: 168 },
-  { name: "Camera 2 - Parking Lot A", active: true, model: "Hikvision DS-2CD2385", group: "Parking", status: "online", working: true, recordingHours: 120 },
-  { name: "Camera 3 - Loading Dock", active: true, model: "Dahua IPC-HFW5831E", group: "Loading", status: "recording", working: true, recordingHours: 144 },
-  { name: "Camera 4 - Reception", active: true, model: "Axis Q1615 Mk III", group: "Interior", status: "online", working: true, recordingHours: 96 },
-  { name: "Camera 5 - Server Room", active: true, model: "Bosch FLEXIDOME IP", group: "Secure", status: "recording", working: true, recordingHours: 200 },
-  { name: "Camera 6 - Warehouse A", active: true, model: "Samsung Wisenet XND", group: "Warehouse", status: "online", working: true, recordingHours: 72 },
-  { name: "Camera 7 - Back Exit", active: false, model: "Axis P3255-LVE", group: "Entrance", status: "offline", working: false, recordingHours: 0 },
-  { name: "Camera 8 - Hallway B", active: true, model: "Hikvision DS-2CD2H85G1", group: "Interior", status: "recording", working: true, recordingHours: 110 },
-  { name: "Camera 9 - Parking Lot B", active: true, model: "Dahua IPC-HDBW5831R", group: "Parking", status: "online", working: true, recordingHours: 88 },
-  { name: "Camera 10 - Main Gate", active: true, model: "Axis Q6155-E", group: "Entrance", status: "recording", working: true, recordingHours: 156 },
-  { name: "Camera 11 - Conference Room", active: true, model: "Sony SNC-EM632R", group: "Interior", status: "online", working: true, recordingHours: 48 },
-  { name: "Camera 12 - IT Room", active: true, model: "Bosch NBN-80052-BA", group: "Secure", status: "recording", working: true, recordingHours: 180 },
-  { name: "Camera 13 - Cafeteria", active: false, model: "Hikvision DS-2CD2185FWD", group: "Interior", status: "offline", working: false, recordingHours: 0 },
-  { name: "Camera 14 - Emergency Exit", active: true, model: "Axis P3235-LV", group: "Entrance", status: "online", working: true, recordingHours: 132 },
-  { name: "Camera 15 - Warehouse B", active: true, model: "Dahua IPC-HFW4831E", group: "Warehouse", status: "recording", working: true, recordingHours: 96 },
-  { name: "Camera 16 - Lobby", active: true, model: "Axis M3106-LVE", group: "Interior", status: "recording", working: true, recordingHours: 144 },
-];
-
-const mockGroups = [
-  { name: "Entrance", cameras: ["Camera 1", "Camera 7", "Camera 10", "Camera 14"], active: true },
-  { name: "Parking", cameras: ["Camera 2", "Camera 9"], active: true },
-  { name: "Loading", cameras: ["Camera 3"], active: true },
-  { name: "Interior", cameras: ["Camera 4", "Camera 8", "Camera 11", "Camera 13", "Camera 16"], active: true },
-  { name: "Secure", cameras: ["Camera 5", "Camera 12"], active: true },
-  { name: "Warehouse", cameras: ["Camera 6", "Camera 15"], active: true },
-];
-
-const eventTypes = ["MOTION", "INTRUSION", "FACE_DETECTION", "VEHICLE_DETECTION", "TAMPERING", "LOITERING"];
-const objectClasses = ["person", "vehicle", "unknown"];
-
-function generateMockEvents(count: number) {
-  const events = [];
-  const now = new Date();
-  for (let i = 0; i < count; i++) {
-    const camera = mockCameras[Math.floor(Math.random() * mockCameras.length)];
-    const eventTime = new Date(now.getTime() - Math.random() * 24 * 60 * 60 * 1000);
-    events.push({
-      id: `evt-${Date.now()}-${i}`,
-      recordCode: `REC${10000 + Math.floor(Math.random() * 90000)}`,
-      camera: camera.name,
-      zone: Math.random() > 0.3 ? ["Zone A", "Zone B", "Zone C"][Math.floor(Math.random() * 3)] : null,
-      eventType: eventTypes[Math.floor(Math.random() * eventTypes.length)],
-      objectClass: objectClasses[Math.floor(Math.random() * objectClasses.length)],
-      ruleName: Math.random() > 0.5 ? ["Motion Rule 1", "Intrusion Alert", "Perimeter Watch"][Math.floor(Math.random() * 3)] : null,
-      timestamp: eventTime.toISOString(),
-      confidence: (0.7 + Math.random() * 0.29).toFixed(2),
-    });
-  }
-  return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-function generateMockAuditLogs(count: number) {
-  const categories = ["USER_ACTION", "SERVER_CONNECTION", "SYSTEM", "SECURITY"];
-  const actions = [
-    "User login successful",
-    "Camera configuration updated",
-    "Bookmark created",
-    "System backup completed",
-    "Recording started",
-    "Alert acknowledged",
-    "User logout",
-    "Settings modified",
-  ];
-  const users = ["admin", "operator1", "security_user", "system"];
-  const logs = [];
-  const now = new Date();
-
-  for (let i = 0; i < count; i++) {
-    const logTime = new Date(now.getTime() - Math.random() * 48 * 60 * 60 * 1000);
-    logs.push({
-      id: `log-${Date.now()}-${i}`,
-      timestamp: logTime.toISOString(),
-      category: categories[Math.floor(Math.random() * categories.length)],
-      action: actions[Math.floor(Math.random() * actions.length)],
-      user: users[Math.floor(Math.random() * users.length)],
-      details: `Operation details for log entry ${i + 1}`,
-      ipAddress: `192.168.1.${Math.floor(Math.random() * 254) + 1}`,
-    });
-  }
-  return logs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-}
-
-const mockBookmarks = [
-  { id: "bm-1", title: "Suspicious Activity - Main Entrance", color: "red", startDate: "2024-12-08", startTime: "14:30", cameras: ["Camera 1 - Main Entrance"], remarks: "Person loitering near entrance for extended period", createdAt: "2024-12-08T14:30:00Z" },
-  { id: "bm-2", title: "Vehicle Incident", color: "orange", startDate: "2024-12-07", startTime: "09:15", cameras: ["Camera 2 - Parking Lot A"], remarks: "Minor collision in parking area, no injuries", createdAt: "2024-12-07T09:15:00Z" },
-  { id: "bm-3", title: "Delivery Verification", color: "blue", startDate: "2024-12-06", startTime: "11:00", cameras: ["Camera 3 - Loading Dock"], remarks: "Large shipment received, documentation verified", createdAt: "2024-12-06T11:00:00Z" },
-  { id: "bm-4", title: "After Hours Access", color: "yellow", startDate: "2024-12-05", startTime: "22:45", cameras: ["Camera 5 - Server Room"], remarks: "Authorized maintenance personnel", createdAt: "2024-12-05T22:45:00Z" },
-  { id: "bm-5", title: "Perimeter Check", color: "green", startDate: "2024-12-04", startTime: "06:00", cameras: ["Camera 10 - Main Gate", "Camera 14 - Emergency Exit"], remarks: "Morning security patrol completed", createdAt: "2024-12-04T06:00:00Z" },
-];
-
-const mockAnalyticsConfigs = [
-  { name: "Motion Detection - All Cameras", active: true, camera: "All", events: ["MOTION"], working: true, status: "OK", statusMessage: "Processing normally" },
-  { name: "Intrusion Detection - Perimeter", active: true, camera: "Perimeter", events: ["INTRUSION"], working: true, status: "OK", statusMessage: "Active and monitoring" },
-  { name: "Face Recognition - Entrance", active: true, camera: "Camera 1", events: ["FACE_DETECTION"], working: true, status: "OK", statusMessage: "Database: 1,247 faces enrolled" },
-  { name: "Vehicle Detection - Parking", active: true, camera: "Parking", events: ["VEHICLE_DETECTION"], working: true, status: "OK", statusMessage: "License plate recognition enabled" },
-  { name: "Loitering Detection", active: false, camera: "All", events: ["LOITERING"], working: false, status: "DISABLED", statusMessage: "Manually disabled" },
-];
-
-const mockCounters = [
-  { id: "cnt-1", name: "People Counter", configuration: "Motion Detection", value: 1247, lastReset: "2024-12-01T00:00:00Z" },
-  { id: "cnt-2", name: "Vehicle Counter", configuration: "Vehicle Detection", value: 892, lastReset: "2024-12-01T00:00:00Z" },
-  { id: "cnt-3", name: "Security Events", configuration: "Intrusion Detection", value: 23, lastReset: "2024-12-01T00:00:00Z" },
-  { id: "cnt-4", name: "Face Matches", configuration: "Face Recognition", value: 456, lastReset: "2024-12-01T00:00:00Z" },
-];
-
-function generateChartData() {
-  const hours = [];
-  const now = new Date();
-  for (let i = 23; i >= 0; i--) {
-    const hourTime = new Date(now.getTime() - i * 60 * 60 * 1000);
-    hours.push({
-      time: hourTime.toISOString().slice(11, 16).replace(":", "h") + "m",
-      hour: hourTime.getHours().toString().padStart(2, "0") + ":00",
-      events: Math.floor(Math.random() * 80) + 20,
-      motion: Math.floor(Math.random() * 50) + 10,
-      intrusion: Math.floor(Math.random() * 10),
-      faces: Math.floor(Math.random() * 30) + 5,
-    });
-  }
-  return hours;
 }
 
 export async function registerRoutes(
@@ -149,66 +232,81 @@ export async function registerRoutes(
   
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      const data = await proxyRequest("/Interface/Dashboard/Stats");
-      res.json(data);
-    } catch {
-      const activeCameras = mockCameras.filter(c => c.active).length;
-      const recordingCameras = mockCameras.filter(c => c.status === "recording").length;
-      const offlineCameras = mockCameras.filter(c => !c.active).length;
-      res.json({
-        totalCameras: mockCameras.length,
-        activeCameras,
-        recordingCameras,
-        offlineCameras,
-        totalEvents: 1247,
-        criticalEvents: 3,
-        totalStorage: "4 TB",
-        usedStorage: "2.8 TB",
-      });
+      // Use Server/GetUsage which returns Stats data
+      const data = await proxyRequest("/Interface/Server/GetUsage");
+      
+      // Check for authentication error
+      if (data.Response?.Code === 101 || data.Code === 101) {
+        res.status(401).json({ message: "Authentication error", code: 101 });
+        return;
+      }
+      
+      const stats = extractDigifortData(data, "Stats");
+      res.json(stats || {});
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/system/status", async (req, res) => {
     try {
-      const data = await proxyRequest("/Interface/System/Status");
+      // Use Server/GetInfo for system information
+      const data = await proxyRequest("/Interface/Server/GetInfo");
+      
+      // Check for authentication error
+      if (data.Response?.Code === 101 || data.Code === 101) {
+        res.status(401).json({ message: "Authentication error", code: 101 });
+        return;
+      }
+      
       res.json(data);
-    } catch {
-      res.json({
-        serverStatus: "online",
-        cpuUsage: 30 + Math.floor(Math.random() * 30),
-        memoryUsage: 50 + Math.floor(Math.random() * 25),
-        diskUsage: 70,
-        uptime: "14d 6h 32m",
-        lastSync: `${Math.floor(Math.random() * 5) + 1} min ago`,
-      });
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/cameras", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/GetCameras");
-      res.json(data.Cameras || []);
-    } catch {
-      res.json(mockCameras);
+      // Digifort API returns: { Response: { Data: { Cameras: [...] } } }
+      const cameras = extractDigifortData(data, "Cameras");
+      const camerasArray = Array.isArray(cameras) ? cameras : [];
+      // Transform Digifort API format (Name, Active, Group) to frontend format (name, active, group)
+      const transformedCameras = camerasArray.map(transformCamera).filter(Boolean);
+      res.json(transformedCameras);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/cameras/groups", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/GetGroups");
-      res.json(data.Groups || []);
-    } catch {
-      res.json(mockGroups);
+      // Digifort API returns: { Response: { Data: { Groups: [...] } } }
+      const groups = extractDigifortData(data, "Groups");
+      const groupsArray = Array.isArray(groups) ? groups : [];
+      // Transform Digifort API format to frontend format
+      const transformedGroups = groupsArray.map(transformGroup).filter(Boolean);
+      res.json(transformedGroups);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/cameras/:name/status", async (req, res) => {
     try {
       const data = await proxyRequest(`/Interface/Cameras/GetStatus?Cameras=${encodeURIComponent(req.params.name)}`);
-      res.json(data.Cameras?.[0] || null);
-    } catch {
-      const camera = mockCameras.find(c => c.name === req.params.name);
-      res.json(camera || null);
+      // Digifort API returns: { Response: { Data: { Cameras: [...] } } }
+      const cameras = extractDigifortData(data, "Cameras");
+      const camerasArray = Array.isArray(cameras) ? cameras : [];
+      if (camerasArray.length > 0) {
+        const transformed = transformCamera(camerasArray[0]);
+        res.json(transformed);
+      } else {
+        res.json(null);
+      }
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -220,26 +318,28 @@ export async function registerRoutes(
         body: JSON.stringify({ camera: req.params.name, action }),
       });
       res.json(data);
-    } catch {
-      res.json({ success: true, message: "Camera activation updated" });
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/analytics/configurations", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/GetAnalyticsConfigurations");
-      res.json(data.AnalyticsConfigurations || []);
-    } catch {
-      res.json(mockAnalyticsConfigs);
+      const configs = extractDigifortData(data, "AnalyticsConfigurations");
+      res.json(Array.isArray(configs) ? configs : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/analytics/counters", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/GetCounters");
-      res.json(data.Counters || []);
-    } catch {
-      res.json(mockCounters);
+      const counters = extractDigifortData(data, "Counters");
+      res.json(Array.isArray(counters) ? counters : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -250,8 +350,8 @@ export async function registerRoutes(
         body: JSON.stringify({ counterId: req.params.id }),
       });
       res.json(data);
-    } catch {
-      res.json({ success: true, message: "Counter reset successfully" });
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -264,27 +364,41 @@ export async function registerRoutes(
       if (req.query.eventTypes) queryParams.set("EventTypes", req.query.eventTypes as string);
       
       const data = await proxyRequest(`/Interface/Analytics/Search?${queryParams.toString()}`);
-      res.json(data.Events || []);
-    } catch {
-      res.json(generateMockEvents(50));
+      const events = extractDigifortData(data, "Events");
+      res.json(Array.isArray(events) ? events : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/analytics/events/recent", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/Search");
-      res.json((data.Events || []).slice(0, 10));
-    } catch {
-      res.json(generateMockEvents(10));
+      const events = extractDigifortData(data, "Events");
+      const eventsArray = Array.isArray(events) ? events : [];
+      res.json(eventsArray.slice(0, 10));
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
   app.get("/api/analytics/chart", async (req, res) => {
     try {
-      const data = await proxyRequest("/Interface/Analytics/Chart");
-      res.json(data);
-    } catch {
-      res.json(generateChartData());
+      // Analytics chart data comes from Analytics/Search endpoint
+      // Return empty data or use Search with date range
+      const queryParams = new URLSearchParams();
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - 7); // Last 7 days
+      
+      queryParams.set("StartDate", startDate.toISOString().split('T')[0].replace(/-/g, '.'));
+      queryParams.set("EndDate", endDate.toISOString().split('T')[0].replace(/-/g, '.'));
+      
+      const data = await proxyRequest(`/Interface/Analytics/Search?${queryParams.toString()}`);
+      const events = extractDigifortData(data, "Events");
+      res.json(Array.isArray(events) ? events : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -297,9 +411,10 @@ export async function registerRoutes(
       if (req.query.keyword) queryParams.set("Keyword", req.query.keyword as string);
       
       const data = await proxyRequest(`/Interface/Audit/Search?${queryParams.toString()}`);
-      res.json(data.AuditLogs || []);
-    } catch {
-      res.json(generateMockAuditLogs(30));
+      const logs = extractDigifortData(data, "AuditLogs");
+      res.json(Array.isArray(logs) ? logs : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -310,9 +425,10 @@ export async function registerRoutes(
       if (req.query.colors) queryParams.set("Colors", req.query.colors as string);
       
       const data = await proxyRequest(`/Interface/Cameras/Bookmarks/Search?${queryParams.toString()}`);
-      res.json(data.Bookmarks || []);
-    } catch {
-      res.json(mockBookmarks);
+      const bookmarks = extractDigifortData(data, "Bookmarks");
+      res.json(Array.isArray(bookmarks) ? bookmarks : []);
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -323,13 +439,8 @@ export async function registerRoutes(
         body: JSON.stringify(req.body),
       });
       res.json(data);
-    } catch {
-      const newBookmark = {
-        id: `bm-${Date.now()}`,
-        ...req.body,
-        createdAt: new Date().toISOString(),
-      };
-      res.json({ success: true, bookmark: newBookmark });
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 
@@ -339,8 +450,8 @@ export async function registerRoutes(
         method: "DELETE",
       });
       res.json(data);
-    } catch {
-      res.json({ success: true, message: "Bookmark deleted" });
+    } catch (error) {
+      upstreamError(res, error);
     }
   });
 

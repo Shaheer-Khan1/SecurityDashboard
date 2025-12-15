@@ -1,10 +1,15 @@
 import express, { type Request, Response, NextFunction } from "express";
+import cors from "cors";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { initializeAuth } from "./auth";
 
 const app = express();
 const httpServer = createServer(app);
+const clientOrigin =
+  process.env.CLIENT_ORIGIN?.split(",").map((o) => o.trim()).filter(Boolean) ||
+  ["http://localhost:5173"];
 
 declare module "http" {
   interface IncomingMessage {
@@ -12,6 +17,12 @@ declare module "http" {
   }
 }
 
+app.use(
+  cors({
+    origin: clientOrigin,
+    credentials: true,
+  }),
+);
 app.use(
   express.json({
     verify: (req, _res, buf) => {
@@ -60,6 +71,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Initialize authentication first
+  await initializeAuth();
+  
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
@@ -70,14 +84,13 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // importantly only setup vite in development and after
-  // setting up all the other routes so the catch-all route
-  // doesn't interfere with the other routes
-  if (process.env.NODE_ENV === "production") {
+  // Optionally serve the built client when requested; by default the server
+  // runs independently and only exposes API routes.
+  if (process.env.SERVE_CLIENT === "true") {
     serveStatic(app);
+    log("serving static client from dist/public", "static");
   } else {
-    const { setupVite } = await import("./vite");
-    await setupVite(httpServer, app);
+    log("skipping static client; SERVE_CLIENT is not true", "static");
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
@@ -85,14 +98,28 @@ app.use((req, res, next) => {
   // this serves both the API and the client.
   // It is the only port that is not firewalled.
   const port = parseInt(process.env.PORT || "5000", 10);
+  const host = process.env.HOST || "0.0.0.0";
+  const reusePort = process.platform !== "win32";
+
+  httpServer.on("error", (err: any) => {
+    if (err?.code === "ENOTSUP") {
+      log(
+        `listen failed on ${host}:${port} with ENOTSUP. On Windows, reusePort is disabled. Try another port or ensure no firewall restriction.`,
+        "server",
+      );
+    }
+    console.error(err);
+    process.exit(1);
+  });
+
   httpServer.listen(
     {
       port,
-      host: "0.0.0.0",
-      reusePort: true,
+      host,
+      ...(reusePort ? { reusePort: true } : {}),
     },
     () => {
-      log(`serving on port ${port}`);
+      log(`serving on ${host}:${port} (reusePort=${reusePort})`);
     },
   );
 })();

@@ -5,9 +5,12 @@ import {
   Activity,
   FileText,
   Bookmark,
-  Shield,
   Settings,
   Bell,
+  ShoppingBag,
+  Shield,
+  GraduationCap,
+  Building,
 } from "lucide-react";
 import {
   Sidebar,
@@ -33,12 +36,30 @@ const mainNavItems = [
     title: "Cameras",
     url: "/cameras",
     icon: Camera,
-    badge: "16",
+    badge: "46",
   },
   {
     title: "Analytics",
     url: "/analytics",
     icon: Activity,
+  },
+  {
+    title: "Shopping Mall",
+    url: "/shopping-mall",
+    icon: ShoppingBag,
+    badge: "LIVE",
+  },
+  {
+    title: "High School",
+    url: "/high-school",
+    icon: GraduationCap,
+    badge: "NEW",
+  },
+  {
+    title: "Moscow University",
+    url: "/moscow-university",
+    icon: Building,
+    badge: "NEW",
   },
   {
     title: "Events",

@@ -1,5 +1,17 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ||
+  "http://localhost:5000") as string;
+
+function resolveApiUrl(url: string): string {
+  // allow absolute URLs to pass through untouched
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const trimmedBase = API_BASE_URL.replace(/\/$/, "");
+  const trimmedPath = url.startsWith("/") ? url.slice(1) : url;
+  return `${trimmedBase}/${trimmedPath}`;
+}
+
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
@@ -12,7 +24,7 @@ export async function apiRequest(
   url: string,
   data?: unknown | undefined,
 ): Promise<Response> {
-  const res = await fetch(url, {
+  const res = await fetch(resolveApiUrl(url), {
     method,
     headers: data ? { "Content-Type": "application/json" } : {},
     body: data ? JSON.stringify(data) : undefined,
@@ -29,7 +41,8 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
+    const path = queryKey[0] as string;
+    const res = await fetch(resolveApiUrl(path), {
       credentials: "include",
     });
 

@@ -26,6 +26,9 @@ import AuditPage from "@/pages/audit";
 import BookmarksPage from "@/pages/bookmarks";
 import SettingsPage from "@/pages/settings";
 import NotFound from "@/pages/not-found";
+import ShoppingMallPage from "@/pages/shopping-mall";
+import HighSchoolPage from "@/pages/high-school";
+import MoscowUniversityPage from "@/pages/moscow-university";
 
 function Router() {
   return (
@@ -37,6 +40,9 @@ function Router() {
       <Route path="/audit" component={AuditPage} />
       <Route path="/bookmarks" component={BookmarksPage} />
       <Route path="/settings" component={SettingsPage} />
+      <Route path="/shopping-mall" component={ShoppingMallPage} />
+      <Route path="/high-school" component={HighSchoolPage} />
+      <Route path="/moscow-university" component={MoscowUniversityPage} />
       <Route component={NotFound} />
     </Switch>
   );

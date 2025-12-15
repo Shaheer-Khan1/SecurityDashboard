@@ -52,13 +52,17 @@ export default function CamerasPage() {
   });
 
   const filteredCameras = cameras.filter((camera) => {
-    const matchesSearch = camera.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      camera.group?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesGroup = selectedGroup === "all" || camera.group === selectedGroup;
+    // Safely handle undefined/null camera.name
+    const cameraName = camera?.name || "";
+    const cameraGroup = camera?.group || "";
+    
+    const matchesSearch = cameraName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      cameraGroup.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesGroup = selectedGroup === "all" || cameraGroup === selectedGroup;
     const matchesStatus = statusFilter === "all" ||
-      (statusFilter === "online" && camera.active) ||
-      (statusFilter === "offline" && !camera.active) ||
-      (statusFilter === "recording" && camera.status === "recording");
+      (statusFilter === "online" && camera?.active) ||
+      (statusFilter === "offline" && !camera?.active) ||
+      (statusFilter === "recording" && camera?.status === "recording");
     return matchesSearch && matchesGroup && matchesStatus;
   });
 
