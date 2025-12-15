@@ -232,17 +232,64 @@ export async function registerRoutes(
   
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      // Use Server/GetUsage which returns Stats data
-      const data = await proxyRequest("/Interface/Server/GetUsage");
+      // Fetch cameras to calculate stats
+      const camerasData = await proxyRequest("/Interface/Cameras/GetCameras");
+      const cameras = extractDigifortData(camerasData, "Cameras");
+      const camerasArray = Array.isArray(cameras) ? cameras : [];
       
-      // Check for authentication error
-      if (data.Response?.Code === 101 || data.Code === 101) {
-        res.status(401).json({ message: "Authentication error", code: 101 });
-        return;
+      // Calculate stats from camera data
+      const totalCameras = camerasArray.length;
+      const activeCameras = camerasArray.filter(c => c.Active === true).length;
+      const recordingCameras = camerasArray.filter(c => 
+        c.MediaProfiles && c.MediaProfiles.includes("Recording")
+      ).length;
+      const offlineCameras = camerasArray.filter(c => c.Active === false).length;
+      
+      // Try to get system info for storage data (optional)
+      let totalStorage = "N/A";
+      let usedStorage = "N/A";
+      let criticalEvents = 0;
+      let totalEvents = 0;
+      
+      try {
+        const systemData = await proxyRequest("/Interface/Server/GetInfo");
+        const serverInfo = extractDigifortData(systemData, "ServerInfo");
+        if (serverInfo?.TotalStorage) {
+          totalStorage = serverInfo.TotalStorage;
+        }
+        if (serverInfo?.UsedStorage) {
+          usedStorage = serverInfo.UsedStorage;
+        }
+      } catch (err) {
+        // Storage data is optional, continue without it
+        console.log("[STATS] Could not fetch storage info:", err instanceof Error ? err.message : err);
       }
       
-      const stats = extractDigifortData(data, "Stats");
-      res.json(stats || {});
+      // Try to get events count (optional)
+      try {
+        const eventsData = await proxyRequest("/Interface/Analytics/Search?");
+        const events = extractDigifortData(eventsData, "Events");
+        if (Array.isArray(events)) {
+          totalEvents = events.length;
+          criticalEvents = events.filter((e: any) => e.Severity === "Critical" || e.Priority === "High").length;
+        }
+      } catch (err) {
+        // Events data is optional, continue without it
+        console.log("[STATS] Could not fetch events info:", err instanceof Error ? err.message : err);
+      }
+      
+      const stats = {
+        totalCameras,
+        activeCameras,
+        recordingCameras,
+        offlineCameras,
+        totalEvents,
+        criticalEvents,
+        totalStorage,
+        usedStorage,
+      };
+      
+      res.json(stats);
     } catch (error) {
       upstreamError(res, error);
     }
