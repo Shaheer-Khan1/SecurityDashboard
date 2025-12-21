@@ -17,364 +17,142 @@ import math
 app = Flask(__name__)
 CORS(app)
 
-app = Flask(__name__)
-CORS(app)
-
 # Helper function to generate random but realistic 3D camera positions
-def generate_high_school_position(camera_name):
-    """Generate 3D position for high school cameras based on their location"""
-    random.seed(camera_name)  # Consistent positioning based on name
+def add_3d_position(camera):
+    """Add 3D position fields to camera based on its name and group"""
+    name = camera["name"]
     
-    # Parse camera type from name
-    if "ENTRANCE" in camera_name:
-        x = random.uniform(-5, 5)
-        y = 3
-        z = random.uniform(-40, -38)
-        angle = math.pi
-        location = "Main Entrance"
-    elif "HALLWAY-CENTRAL" in camera_name:
-        x = 0
-        y = 3
-        z = random.uniform(-20, 20)
-        angle = random.choice([0, math.pi])
-        location = f"Central Hallway {camera_name[-2:]}"
-    elif "WEST-HALLWAY" in camera_name:
-        x = -20
-        y = 3
-        z = random.uniform(-20, 20)
-        angle = math.pi / 2
-        location = f"West Hallway {camera_name[-2:]}"
-    elif "EAST-HALLWAY" in camera_name:
-        x = 20
-        y = 3
-        z = random.uniform(-20, 20)
-        angle = -math.pi / 2
-        location = f"East Hallway {camera_name[-2:]}"
-    elif "CLASSROOM" in camera_name:
-        if "-A" in camera_name:
-            x = random.uniform(-20, -10)
-            z = random.uniform(-30, -10)
-        else:  # -B classrooms
-            x = random.uniform(10, 20)
-            z = random.uniform(-30, -10)
-        y = 3
-        angle = random.uniform(0, 2 * math.pi)
-        location = camera_name.split("-")[-1]
-    elif "CAFETERIA" in camera_name:
-        x = random.uniform(-15, 15)
-        y = 3
-        z = random.uniform(25, 35)
-        angle = random.choice([0, math.pi/2, -math.pi/2])
-        location = "Cafeteria"
-    elif "LIBRARY" in camera_name:
-        x = random.uniform(-30, -20)
-        y = 3
-        z = random.uniform(-10, 0)
-        angle = math.pi / 2
-        location = "Library"
-    elif "GYM" in camera_name:
-        x = random.uniform(20, 30)
-        y = 3
-        z = random.uniform(5, 20)
-        angle = -math.pi / 2
-        location = "Gymnasium"
-    elif "STAIR" in camera_name:
-        if "WEST" in camera_name:
-            x = -25
-            angle = math.pi / 4
+    # High School cameras
+    if name.startswith("CAM-HS-"):
+        if "ENTRANCE" in name:
+            camera.update({"x": random.uniform(-5, 5), "y": 3, "z": random.uniform(-40, -38), "angle": math.pi, "location": "Main Entrance"})
+        elif "HALLWAY-CENTRAL" in name:
+            camera.update({"x": 0, "y": 3, "z": random.uniform(-20, 20), "angle": random.choice([0, math.pi]), "location": f"Central Hallway"})
+        elif "WEST-HALLWAY" in name:
+            camera.update({"x": -20, "y": 3, "z": random.uniform(-20, 20), "angle": math.pi / 2, "location": "West Hallway"})
+        elif "EAST-HALLWAY" in name:
+            camera.update({"x": 20, "y": 3, "z": random.uniform(-20, 20), "angle": -math.pi / 2, "location": "East Hallway"})
+        elif "CLASSROOM" in name:
+            if "-A" in name:
+                camera.update({"x": random.uniform(-20, -10), "y": 3, "z": random.uniform(-30, -10), "angle": random.uniform(0, 2*math.pi), "location": name.split("-")[-1]})
+            else:
+                camera.update({"x": random.uniform(10, 20), "y": 3, "z": random.uniform(-30, -10), "angle": random.uniform(0, 2*math.pi), "location": name.split("-")[-1]})
+        elif "CAFETERIA" in name:
+            camera.update({"x": random.uniform(-15, 15), "y": 3, "z": random.uniform(25, 35), "angle": random.choice([0, math.pi/2, -math.pi/2]), "location": "Cafeteria"})
+        elif "LIBRARY" in name:
+            camera.update({"x": random.uniform(-30, -20), "y": 3, "z": random.uniform(-10, 0), "angle": math.pi/2, "location": "Library"})
+        elif "GYM" in name:
+            camera.update({"x": random.uniform(20, 30), "y": 3, "z": random.uniform(5, 20), "angle": -math.pi/2, "location": "Gymnasium"})
+        elif "STAIR" in name:
+            camera.update({"x": -25 if "WEST" in name else 25, "y": 3, "z": -30, "angle": math.pi/4 if "WEST" in name else -math.pi/4, "location": "Stairwell"})
+        elif "EXIT" in name:
+            if "WEST" in name:
+                camera.update({"x": -35, "y": 3, "z": 0, "angle": math.pi/2, "location": "West Exit"})
+            elif "EAST" in name:
+                camera.update({"x": 35, "y": 3, "z": 0, "angle": -math.pi/2, "location": "East Exit"})
+            else:
+                camera.update({"x": 0, "y": 3, "z": 40, "angle": 0, "location": "Rear Exit"})
+        elif "PARKING" in name:
+            camera.update({"x": -40, "y": 5, "z": random.uniform(-30, 30), "angle": math.pi/4, "location": "Parking Lot"})
+        elif "PLAYGROUND" in name:
+            camera.update({"x": 40, "y": 5, "z": 30, "angle": -math.pi/4, "location": "Playground"})
+        elif "OFFICE" in name:
+            camera.update({"x": random.uniform(-10, -5), "y": 3, "z": -35, "angle": math.pi/4, "location": "Office"})
         else:
-            x = 25
-            angle = -math.pi / 4
-        y = 3
-        z = -30
-        location = "Stairwell"
-    elif "EXIT" in camera_name:
-        if "WEST" in camera_name:
-            x = -35
-            angle = math.pi / 2
-        elif "EAST" in camera_name:
-            x = 35
-            angle = -math.pi / 2
-        else:  # REAR
-            x = 0
-            angle = 0
-            z = 40
-        y = 3
-        z = 0 if "WEST" in camera_name or "EAST" in camera_name else 40
-        location = "Emergency Exit"
-    elif "PARKING" in camera_name:
-        x = -40
-        y = 5
-        z = random.uniform(-30, 30)
-        angle = math.pi / 4
-        location = "Parking Lot"
-    elif "PLAYGROUND" in camera_name:
-        x = 40
-        y = 5
-        z = 30
-        angle = -math.pi / 4
-        location = "Playground"
-    elif "OFFICE" in camera_name:
-        x = random.uniform(-10, -5)
-        y = 3
-        z = -35
-        angle = math.pi / 4
-        location = "Office"
-    else:
-        # Default random position
-        x = random.uniform(-30, 30)
-        y = 3
-        z = random.uniform(-30, 30)
-        angle = random.uniform(0, 2 * math.pi)
-        location = "Other"
+            camera.update({"x": random.uniform(-30, 30), "y": 3, "z": random.uniform(-30, 30), "angle": random.uniform(0, 2*math.pi), "location": "Other"})
     
-    return {"x": x, "y": y, "z": z, "angle": angle, "location": location}
-
-def generate_moscow_university_position(camera_name):
-    """Generate 3D position for Moscow State University cameras"""
-    random.seed(camera_name)  # Consistent positioning
-    
-    if "MAIN-ENTRANCE" in camera_name:
-        if "-01" in camera_name:
-            x, z = 0, -45
-        elif "-02" in camera_name:
-            x, z = -15, -45
+    # Moscow State University cameras
+    elif name.startsWith("CAM-MSU-"):
+        if "MAIN-ENTRANCE" in name:
+            if "-01" in name:
+                camera.update({"x": 0, "y": 2, "z": -45, "angle": math.pi, "location": "Main Entrance Center"})
+            elif "-02" in name:
+                camera.update({"x": -15, "y": 2, "z": -45, "angle": math.pi, "location": "Main Entrance Left"})
+            else:
+                camera.update({"x": 15, "y": 2, "z": -45, "angle": math.pi, "location": "Main Entrance Right"})
+        elif "TOWER-BASE" in name:
+            camera.update({"x": 0, "y": 5, "z": 0 if "-01" in name else 10, "angle": 0 if "-01" in name else math.pi, "location": "Tower Base"})
+        elif "TOWER-MID" in name:
+            camera.update({"x": -3 if "-01" in name else 3, "y": 30, "z": 0, "angle": math.pi/2 if "-01" in name else -math.pi/2, "location": "Tower Mid-Level"})
+        elif "TOWER-TOP" in name:
+            camera.update({"x": 0, "y": 60, "z": -2 if "-01" in name else 2, "angle": math.pi if "-01" in name else 0, "location": "Tower Top"})
+        elif "WEST-WING" in name:
+            if "ENTRANCE" in name:
+                camera.update({"x": -30, "y": 2, "z": -30, "angle": math.pi/2, "location": "West Wing Entrance"})
+            elif "CORRIDOR-01" in name:
+                camera.update({"x": -40, "y": 2, "z": -20, "angle": math.pi/2, "location": "West Corridor 1"})
+            elif "CORRIDOR-02" in name:
+                camera.update({"x": -40, "y": 2, "z": 0, "angle": math.pi/2, "location": "West Corridor 2"})
+            elif "CORRIDOR-03" in name:
+                camera.update({"x": -40, "y": 2, "z": 20, "angle": math.pi/2, "location": "West Corridor 3"})
+            elif "ROOF" in name:
+                camera.update({"x": -35, "y": 15, "z": 0, "angle": math.pi/2, "location": "West Wing Roof"})
+            else:
+                camera.update({"x": -35, "y": 2, "z": 0, "angle": math.pi/2, "location": "West Wing"})
+        elif "EAST-WING" in name:
+            if "ENTRANCE" in name:
+                camera.update({"x": 30, "y": 2, "z": -30, "angle": -math.pi/2, "location": "East Wing Entrance"})
+            elif "CORRIDOR-01" in name:
+                camera.update({"x": 40, "y": 2, "z": -20, "angle": -math.pi/2, "location": "East Corridor 1"})
+            elif "CORRIDOR-02" in name:
+                camera.update({"x": 40, "y": 2, "z": 0, "angle": -math.pi/2, "location": "East Corridor 2"})
+            elif "CORRIDOR-03" in name:
+                camera.update({"x": 40, "y": 2, "z": 20, "angle": -math.pi/2, "location": "East Corridor 3"})
+            elif "ROOF" in name:
+                camera.update({"x": 35, "y": 15, "z": 0, "angle": -math.pi/2, "location": "East Wing Roof"})
+            else:
+                camera.update({"x": 35, "y": 2, "z": 0, "angle": -math.pi/2, "location": "East Wing"})
+        elif "LIBRARY" in name:
+            camera.update({"x": random.uniform(-30, -25), "y": 2, "z": random.uniform(-40, -35), "angle": math.pi/4, "location": "Library"})
+        elif "AUDITORIUM" in name:
+            camera.update({"x": random.uniform(20, 30), "y": 2 if "MAIN" in name else 8, "z": -35, "angle": -math.pi/4, "location": "Auditorium"})
+        elif "CAFETERIA" in name:
+            camera.update({"x": random.uniform(-25, -15), "y": 2, "z": random.uniform(35, 40), "angle": math.pi/2, "location": "Cafeteria"})
+        elif "STUDENT-CENTER" in name:
+            camera.update({"x": 20, "y": 2, "z": 35, "angle": -math.pi/2, "location": "Student Center"})
+        elif "RECREATION" in name:
+            camera.update({"x": 25, "y": 2, "z": 40, "angle": -math.pi/4, "location": "Recreation Area"})
+        elif "LAB" in name:
+            if "-A" in name:
+                camera.update({"x": -50, "y": 2, "z": -10, "angle": math.pi/2, "location": "Laboratory A"})
+            elif "-B" in name:
+                camera.update({"x": -50, "y": 2, "z": 10, "angle": math.pi/2, "location": "Laboratory B"})
+            else:
+                camera.update({"x": -45, "y": 2, "z": 0, "angle": math.pi/2, "location": "Lab Corridor"})
+        elif "ADMIN" in name:
+            camera.update({"x": random.uniform(-15, -5), "y": 2, "z": random.uniform(-42, -38), "angle": math.pi/4, "location": "Administration"})
+        elif "RECTOR" in name:
+            camera.update({"x": 0, "y": 50, "z": 0, "angle": 0, "location": "Rector's Office"})
+        elif "NORTH-GATE" in name:
+            camera.update({"x": 0, "y": 2, "z": -55, "angle": math.pi, "location": "North Gate"})
+        elif "SOUTH-GATE" in name:
+            camera.update({"x": 0, "y": 2, "z": 55, "angle": 0, "location": "South Gate"})
+        elif "WEST-GATE" in name:
+            camera.update({"x": -55, "y": 2, "z": 0, "angle": math.pi/2, "location": "West Gate"})
+        elif "EAST-GATE" in name:
+            camera.update({"x": 55, "y": 2, "z": 0, "angle": -math.pi/2, "location": "East Gate"})
+        elif "PARKING-NORTH" in name:
+            camera.update({"x": -35 if "-01" in name else 35, "y": 5, "z": -60, "angle": math.pi/4 if "-01" in name else -math.pi/4, "location": "North Parking"})
+        elif "PARKING-SOUTH" in name:
+            camera.update({"x": -35 if "-01" in name else 35, "y": 5, "z": 60, "angle": math.pi*0.75 if "-01" in name else -math.pi*0.75, "location": "South Parking"})
+        elif "PLAZA" in name:
+            camera.update({"x": 0, "y": 2, "z": -50, "angle": math.pi, "location": "Central Plaza"})
+        elif "GARDEN" in name:
+            camera.update({"x": -30 if "WEST" in name else 30, "y": 2, "z": -20, "angle": math.pi/2 if "WEST" in name else -math.pi/2, "location": "Garden"})
+        elif "EMERGENCY-WEST" in name:
+            camera.update({"x": -48, "y": 2, "z": -30 if "-01" in name else 30, "angle": math.pi/2, "location": "West Emergency Exit"})
+        elif "EMERGENCY-EAST" in name:
+            camera.update({"x": 48, "y": 2, "z": -30 if "-01" in name else 30, "angle": -math.pi/2, "location": "East Emergency Exit"})
         else:
-            x, z = 15, -45
-        y = 2
-        angle = math.pi
-        location = "Main Entrance"
-    elif "TOWER-BASE" in camera_name:
-        x = 0
-        y = 5
-        z = 0 if "-01" in camera_name else 10
-        angle = 0 if "-01" in camera_name else math.pi
-        location = "Tower Base"
-    elif "TOWER-MID" in camera_name:
-        x = -3 if "-01" in camera_name else 3
-        y = 30
-        z = 0
-        angle = math.pi/2 if "-01" in camera_name else -math.pi/2
-        location = "Tower Mid-Level"
-    elif "TOWER-TOP" in camera_name:
-        x = 0
-        y = 60
-        z = -2 if "-01" in camera_name else 2
-        angle = math.pi if "-01" in camera_name else 0
-        location = "Tower Top"
-    elif "WEST-WING" in camera_name:
-        if "ENTRANCE" in camera_name:
-            x, y, z = -30, 2, -30
-        elif "CORRIDOR-01" in camera_name:
-            x, y, z = -40, 2, -20
-        elif "CORRIDOR-02" in camera_name:
-            x, y, z = -40, 2, 0
-        elif "CORRIDOR-03" in camera_name:
-            x, y, z = -40, 2, 20
-        elif "ROOF" in camera_name:
-            x, y, z = -35, 15, 0
-        else:
-            x, y, z = -35, 2, 0
-        angle = math.pi / 2
-        location = "West Wing"
-    elif "EAST-WING" in camera_name:
-        if "ENTRANCE" in camera_name:
-            x, y, z = 30, 2, -30
-        elif "CORRIDOR-01" in camera_name:
-            x, y, z = 40, 2, -20
-        elif "CORRIDOR-02" in camera_name:
-            x, y, z = 40, 2, 0
-        elif "CORRIDOR-03" in camera_name:
-            x, y, z = 40, 2, 20
-        elif "ROOF" in camera_name:
-            x, y, z = 35, 15, 0
-        else:
-            x, y, z = 35, 2, 0
-        angle = -math.pi / 2
-        location = "East Wing"
-    elif "LIBRARY" in camera_name:
-        x = random.uniform(-30, -25)
-        y = 2 if "ENTRANCE" in camera_name else 2
-        z = random.uniform(-40, -35)
-        angle = math.pi / 4
-        location = "Library"
-    elif "AUDITORIUM" in camera_name:
-        x = random.uniform(20, 30)
-        y = 2 if "MAIN" in camera_name else 8
-        z = -35
-        angle = -math.pi / 4
-        location = "Auditorium"
-    elif "CAFETERIA" in camera_name:
-        x = random.uniform(-25, -15)
-        y = 2
-        z = random.uniform(35, 40)
-        angle = math.pi / 2
-        location = "Cafeteria"
-    elif "STUDENT-CENTER" in camera_name:
-        x = 20
-        y = 2
-        z = 35
-        angle = -math.pi / 2
-        location = "Student Center"
-    elif "RECREATION" in camera_name:
-        x = 25
-        y = 2
-        z = 40
-        angle = -math.pi / 4
-        location = "Recreation Area"
-    elif "LAB" in camera_name:
-        if "-A" in camera_name:
-            x, y, z = -50, 2, -10
-        elif "-B" in camera_name:
-            x, y, z = -50, 2, 10
-        else:  # CORRIDOR
-            x, y, z = -45, 2, 0
-        angle = math.pi / 2
-        location = "Laboratory"
-    elif "ADMIN" in camera_name:
-        x = random.uniform(-15, -5)
-        y = 2
-        z = random.uniform(-42, -38)
-        angle = math.pi / 4
-        location = "Administration"
-    elif "RECTOR" in camera_name:
-        x, y, z = 0, 50, 0
-        angle = 0
-        location = "Rector's Office"
-    elif "NORTH-GATE" in camera_name:
-        x, y, z = 0, 2, -55
-        angle = math.pi
-        location = "North Gate"
-    elif "SOUTH-GATE" in camera_name:
-        x, y, z = 0, 2, 55
-        angle = 0
-        location = "South Gate"
-    elif "WEST-GATE" in camera_name:
-        x, y, z = -55, 2, 0
-        angle = math.pi / 2
-        location = "West Gate"
-    elif "EAST-GATE" in camera_name:
-        x, y, z = 55, 2, 0
-        angle = -math.pi / 2
-        location = "East Gate"
-    elif "PARKING-NORTH" in camera_name:
-        x = -35 if "-01" in camera_name else 35
-        y = 5
-        z = -60
-        angle = math.pi / 4 if "-01" in camera_name else -math.pi / 4
-        location = "North Parking"
-    elif "PARKING-SOUTH" in camera_name:
-        x = -35 if "-01" in camera_name else 35
-        y = 5
-        z = 60
-        angle = math.pi * 0.75 if "-01" in camera_name else -math.pi * 0.75
-        location = "South Parking"
-    elif "PLAZA" in camera_name:
-        x, y, z = 0, 2, -50
-        angle = math.pi
-        location = "Central Plaza"
-    elif "GARDEN" in camera_name:
-        x = -30 if "WEST" in camera_name else 30
-        y = 2
-        z = -20
-        angle = math.pi/2 if "WEST" in camera_name else -math.pi/2
-        location = "Garden"
-    elif "EMERGENCY-WEST" in camera_name:
-        x = -48
-        y = 2
-        z = -30 if "-01" in camera_name else 30
-        angle = math.pi / 2
-        location = "West Emergency Exit"
-    elif "EMERGENCY-EAST" in camera_name:
-        x = 48
-        y = 2
-        z = -30 if "-01" in camera_name else 30
-        angle = -math.pi / 2
-        location = "East Emergency Exit"
-    else:
-        # Default random position
-        x = random.uniform(-50, 50)
-        y = 2
-        z = random.uniform(-50, 50)
-        angle = random.uniform(0, 2 * math.pi)
-        location = "Other"
+            camera.update({"x": random.uniform(-50, 50), "y": 2, "z": random.uniform(-50, 50), "angle": random.uniform(0, 2*math.pi), "location": "Other"})
     
-    return {"x": x, "y": y, "z": z, "angle": angle, "location": location}
+    return camera
 
-# Mock Data Storage - Shopping Mall CCTV System
-mock_cameras = []
+# Set random seed for reproducibility
+random.seed(42)
 
-# Generate shopping mall cameras (keep existing lat/long, no 3D coords needed for mall)
-# Generate shopping mall cameras (keep existing lat/long, no 3D coords needed for mall)
-mall_cameras_data = [
-    # Main Entrance (2 cameras)
-    {"name": "CAM-ENTRANCE-LEFT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.101", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0060, "group": "Entrance", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-ENTRANCE-RIGHT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.102", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0061, "group": "Entrance", "status": "recording", "working": True, "recordingHours": 168},
-]
-
-# Add mall cameras (first 2 shopping mall cameras - keeping them as-is)
-for cam in mall_cameras_data:
-    mock_cameras.append(cam)
-
-# HIGH SCHOOL CAMERAS (34 cameras) - with 3D positioning
-high_school_cameras = [
-    {"name": "CAM-ENTRANCE-LEFT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.101", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0060, "group": "Entrance", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-ENTRANCE-RIGHT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.102", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0061, "group": "Entrance", "status": "recording", "working": True, "recordingHours": 168},
-    
-    # Ground Floor (16 cameras)
-    {"name": "CAM-GF-LOBBY", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.103", "connectionPort": 80, "latitude": 40.7129, "longitude": -74.0060, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-CORRIDOR-WEST", "active": True, "model": "Axis Q1615", "deviceType": "IP Camera", "connectionAddress": "192.168.1.104", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0062, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-CORRIDOR-EAST", "active": True, "model": "Axis Q1615", "deviceType": "IP Camera", "connectionAddress": "192.168.1.105", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0058, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-WEST-WING", "active": True, "model": "Dahua IPC-HFW5831E", "deviceType": "IP Camera", "connectionAddress": "192.168.1.106", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0063, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-EAST-WING", "active": True, "model": "Dahua IPC-HFW5831E", "deviceType": "IP Camera", "connectionAddress": "192.168.1.107", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0057, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STAIRWELL-WEST", "active": True, "model": "Samsung Wisenet PNM", "deviceType": "IP Camera", "connectionAddress": "192.168.1.108", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0064, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STAIRWELL-EAST", "active": True, "model": "Samsung Wisenet PNM", "deviceType": "IP Camera", "connectionAddress": "192.168.1.109", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0056, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STORE-1", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.110", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0062, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STORE-2", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.111", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0060, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STORE-3", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.112", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0058, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-STORE-4", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.113", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0056, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-COURT-NORTH", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.114", "connectionPort": 80, "latitude": 40.7129, "longitude": -74.0059, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-FOODCOURT-WEST", "active": True, "model": "Hikvision DS-2CD2H85G1", "deviceType": "IP Camera", "connectionAddress": "192.168.1.115", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0061, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-FOODCOURT-EAST", "active": True, "model": "Hikvision DS-2CD2H85G1", "deviceType": "IP Camera", "connectionAddress": "192.168.1.116", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0057, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-GF-COURT-SOUTH", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.117", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0059, "group": "GroundFloor", "status": "recording", "working": True, "recordingHours": 168},
-    
-    # Second Floor (12 cameras)
-    {"name": "CAM-2F-LOBBY", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.118", "connectionPort": 80, "latitude": 40.7129, "longitude": -74.0060, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-CORRIDOR-WEST", "active": True, "model": "Axis Q1615", "deviceType": "IP Camera", "connectionAddress": "192.168.1.119", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0062, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-CORRIDOR-EAST", "active": True, "model": "Axis Q1615", "deviceType": "IP Camera", "connectionAddress": "192.168.1.120", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0058, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-WEST-WING", "active": True, "model": "Dahua IPC-HFW5831E", "deviceType": "IP Camera", "connectionAddress": "192.168.1.121", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0063, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-EAST-WING", "active": True, "model": "Dahua IPC-HFW5831E", "deviceType": "IP Camera", "connectionAddress": "192.168.1.122", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0057, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STAIRWELL-WEST", "active": True, "model": "Samsung Wisenet PNM", "deviceType": "IP Camera", "connectionAddress": "192.168.1.123", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0064, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STAIRWELL-EAST", "active": True, "model": "Samsung Wisenet PNM", "deviceType": "IP Camera", "connectionAddress": "192.168.1.124", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0056, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STORE-5", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.125", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0062, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STORE-6", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.126", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0060, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STORE-7", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.127", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0058, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-STORE-8", "active": True, "model": "Axis P3245-V", "deviceType": "IP Camera", "connectionAddress": "192.168.1.128", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0056, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-2F-BALCONY-SOUTH", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.129", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0059, "group": "SecondFloor", "status": "recording", "working": True, "recordingHours": 168},
-    
-    # Service Area (3 cameras)
-    {"name": "CAM-LOADING-DOCK-LEFT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.130", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0061, "group": "Service", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-LOADING-DOCK-RIGHT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.131", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0059, "group": "Service", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-SERVICE-CORRIDOR", "active": True, "model": "Axis Q1615", "deviceType": "IP Camera", "connectionAddress": "192.168.1.132", "connectionPort": 80, "latitude": 40.7125, "longitude": -74.0060, "group": "Service", "status": "recording", "working": True, "recordingHours": 168},
-    
-    # Parking (6 cameras)
-    {"name": "CAM-PARKING-WEST-FRONT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.133", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0065, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-PARKING-WEST-MID", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.134", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0065, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-PARKING-WEST-BACK", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.135", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0065, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-PARKING-EAST-FRONT", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.136", "connectionPort": 80, "latitude": 40.7130, "longitude": -74.0055, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-PARKING-EAST-MID", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.137", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0055, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-PARKING-EAST-BACK", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.1.138", "connectionPort": 80, "latitude": 40.7126, "longitude": -74.0055, "group": "Parking", "status": "recording", "working": True, "recordingHours": 168},
-    
-    # Perimeter (8 cameras)
-    {"name": "CAM-ROOF-NW-CORNER", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.139", "connectionPort": 80, "latitude": 40.7131, "longitude": -74.0064, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-ROOF-NE-CORNER", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.140", "connectionPort": 80, "latitude": 40.7131, "longitude": -74.0056, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-ROOF-SW-CORNER", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.141", "connectionPort": 80, "latitude": 40.7125, "longitude": -74.0064, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-ROOF-SE-CORNER", "active": True, "model": "Axis Q6155-E", "deviceType": "PTZ Camera", "connectionAddress": "192.168.1.142", "connectionPort": 80, "latitude": 40.7125, "longitude": -74.0056, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-SIDE-DOOR-WEST", "active": True, "model": "Axis M3106-L", "deviceType": "IP Camera", "connectionAddress": "192.168.1.143", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0066, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-SIDE-DOOR-EAST", "active": True, "model": "Axis M3106-L", "deviceType": "IP Camera", "connectionAddress": "192.168.1.144", "connectionPort": 80, "latitude": 40.7128, "longitude": -74.0054, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-EMERGENCY-EXIT-WEST", "active": True, "model": "Axis M3106-L", "deviceType": "IP Camera", "connectionAddress": "192.168.1.145", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0066, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    {"name": "CAM-EMERGENCY-EXIT-EAST", "active": True, "model": "Axis M3106-L", "deviceType": "IP Camera", "connectionAddress": "192.168.1.146", "connectionPort": 80, "latitude": 40.7127, "longitude": -74.0054, "group": "Perimeter", "status": "recording", "working": True, "recordingHours": 168},
-    
+# Mock Data Storage - All cameras
+mock_cameras_base = [
     # HIGH SCHOOL CAMERAS (34 cameras)
     # Main Entrance
     {"name": "CAM-HS-MAIN-ENTRANCE-01", "active": True, "model": "Hikvision DS-2CD2385", "deviceType": "IP Camera", "connectionAddress": "192.168.2.101", "connectionPort": 80, "latitude": 40.7150, "longitude": -74.0070, "group": "HighSchool-Entrance", "status": "recording", "working": True, "recordingHours": 168},
@@ -507,23 +285,10 @@ high_school_cameras = [
     {"name": "CAM-MSU-EMERGENCY-EAST-02", "active": True, "model": "Axis M3106-L", "deviceType": "IP Camera", "connectionAddress": "192.168.3.148", "connectionPort": 80, "latitude": 55.7028, "longitude": 37.5314, "group": "MSU-Emergency", "status": "recording", "working": True, "recordingHours": 168},
 ]
 
-# Add high school and Moscow University cameras to mock_cameras
-for cam in high_school_cameras:
-    mock_cameras.append(cam)
-
-print(f"[MOCK SERVER] Loaded {len(mock_cameras)} cameras total")
-print(f"[MOCK SERVER] - MSU cameras: {len([c for c in mock_cameras if c['name'].startswith('CAM-MSU-')])}")
-print(f"[MOCK SERVER] - High School cameras: {len([c for c in mock_cameras if c['name'].startswith('CAM-HS-')])}")
-print(f"[MOCK SERVER] - Mall cameras: {len([c for c in mock_cameras if not c['name'].startswith('CAM-MSU-') and not c['name'].startswith('CAM-HS-')])}")
+# Add 3D positions to all cameras
+mock_cameras = [add_3d_position(cam.copy()) for cam in mock_cameras_base]
 
 mock_groups = [
-    {"name": "Entrance", "cameras": ["CAM-ENTRANCE-LEFT", "CAM-ENTRANCE-RIGHT"], "active": True},
-    {"name": "GroundFloor", "cameras": ["CAM-GF-LOBBY", "CAM-GF-CORRIDOR-WEST", "CAM-GF-CORRIDOR-EAST", "CAM-GF-WEST-WING", "CAM-GF-EAST-WING", "CAM-GF-STAIRWELL-WEST", "CAM-GF-STAIRWELL-EAST", "CAM-GF-STORE-1", "CAM-GF-STORE-2", "CAM-GF-STORE-3", "CAM-GF-STORE-4", "CAM-GF-COURT-NORTH", "CAM-GF-FOODCOURT-WEST", "CAM-GF-FOODCOURT-EAST", "CAM-GF-COURT-SOUTH"], "active": True},
-    {"name": "SecondFloor", "cameras": ["CAM-2F-LOBBY", "CAM-2F-CORRIDOR-WEST", "CAM-2F-CORRIDOR-EAST", "CAM-2F-WEST-WING", "CAM-2F-EAST-WING", "CAM-2F-STAIRWELL-WEST", "CAM-2F-STAIRWELL-EAST", "CAM-2F-STORE-5", "CAM-2F-STORE-6", "CAM-2F-STORE-7", "CAM-2F-STORE-8", "CAM-2F-BALCONY-SOUTH"], "active": True},
-    {"name": "Service", "cameras": ["CAM-LOADING-DOCK-LEFT", "CAM-LOADING-DOCK-RIGHT", "CAM-SERVICE-CORRIDOR"], "active": True},
-    {"name": "Parking", "cameras": ["CAM-PARKING-WEST-FRONT", "CAM-PARKING-WEST-MID", "CAM-PARKING-WEST-BACK", "CAM-PARKING-EAST-FRONT", "CAM-PARKING-EAST-MID", "CAM-PARKING-EAST-BACK"], "active": True},
-    {"name": "Perimeter", "cameras": ["CAM-ROOF-NW-CORNER", "CAM-ROOF-NE-CORNER", "CAM-ROOF-SW-CORNER", "CAM-ROOF-SE-CORNER", "CAM-SIDE-DOOR-WEST", "CAM-SIDE-DOOR-EAST", "CAM-EMERGENCY-EXIT-WEST", "CAM-EMERGENCY-EXIT-EAST"], "active": True},
-    
     # High School Groups
     {"name": "HighSchool-Entrance", "cameras": ["CAM-HS-MAIN-ENTRANCE-01", "CAM-HS-MAIN-ENTRANCE-02"], "active": True},
     {"name": "HighSchool-Hallways", "cameras": ["CAM-HS-HALLWAY-CENTRAL-01", "CAM-HS-HALLWAY-CENTRAL-02", "CAM-HS-HALLWAY-CENTRAL-03"], "active": True},
@@ -643,8 +408,9 @@ mock_counters = [
 def home():
     return jsonify({
         "name": "Digifort Mock API Server",
-        "version": "1.0.0",
+        "version": "2.0.0",
         "status": "running",
+        "camerasWithPosition": len([c for c in mock_cameras if 'x' in c]),
         "endpoints": [
             "/Interface/Cameras/GetCameras",
             "/Interface/Cameras/GetGroups",
@@ -863,4 +629,13 @@ def get_chart_data():
     return jsonify(hours)
 
 if __name__ == "__main__":
+    print("=" * 70)
+    print("  Digifort Mock API Server Starting")
+    print("=" * 70)
+    print(f"  Total cameras: {len(mock_cameras)}")
+    print(f"  Cameras with 3D positions: {len([c for c in mock_cameras if 'x' in c])}")
+    print(f"  High School cameras: {len([c for c in mock_cameras if c['name'].startsWith('CAM-HS-')])}")
+    print(f"  MSU cameras: {len([c for c in mock_cameras if c['name'].startsWith('CAM-MSU-')])}")
+    print("=" * 70)
     app.run(host="0.0.0.0", port=8089, debug=True)
+

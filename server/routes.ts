@@ -1,19 +1,66 @@
+/**
+ * Digifort API Proxy Routes
+ * 
+ * This module provides a proxy layer between the frontend and the Digifort API.
+ * It handles:
+ * - Authentication (both Basic and Safe methods)
+ * - API request proxying with proper headers
+ * - Response parsing (JSON and XML formats)
+ * - Data transformation from Digifort format to frontend format
+ * - Error handling and retry logic
+ * 
+ * The proxy allows the frontend to make requests to /api/* endpoints,
+ * which are then forwarded to the Digifort API with authentication.
+ */
+
 import type { Express, Response as ExpressResponse } from "express";
 import { type Server } from "http";
 import { addAuthToUrl, getBasicAuthHeader } from "./auth";
 
-const MOCK_SERVER_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
+// Digifort API base URL (or mock server URL for development)
+// ============================================
+// DIGIFORT API CONFIGURATION (COMMENTED OUT)
+// ============================================
+// To use the Digifort API instead of the mock server:
+// 1. Uncomment the line below
+// 2. Comment out the MOCK_SERVER_URL line that follows
+// 3. Set environment variables: DIGIFORT_USERNAME, DIGIFORT_PASSWORD, DIGIFORT_API_URL
+// const DIGIFORT_API_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
 
-// Debug counters
+// ============================================
+// MOCK SERVER CONFIGURATION (ACTIVE)
+// ============================================
+// Using mock server for development and testing
+// The mock server provides sample data for all features
+const MOCK_SERVER_URL = "http://localhost:8089";
+
+// Debug counters for logging
 let proxyRequestLogCount = 0;
 let proxyRequestFirstFailure = false;
 
+/**
+ * Send error response when upstream API is unavailable
+ * 
+ * @param res - Express response object
+ * @param _error - The error that occurred (unused, kept for future logging)
+ */
 function upstreamError(res: ExpressResponse, _error: unknown) {
   res.status(502).json({ message: "Upstream API unavailable" });
 }
 
 /**
  * Parse Digifort API response (handles both JSON and XML)
+ * 
+ * Digifort API can return responses in multiple formats:
+ * - JSON: {"Response":{"Code":0,"Data":{...}}}
+ * - XML: <Response><Data>...</Data></Response>
+ * - Plain JSON without content-type header
+ * 
+ * This function detects the format and parses accordingly.
+ * 
+ * @param response - Fetch API Response object from Digifort API
+ * @returns Parsed response data as a JavaScript object
+ * @throws Error if the response format is not supported
  */
 async function parseDigifortResponse(response: Response): Promise<any> {
   const contentType = response.headers.get("content-type") || "";
@@ -40,7 +87,19 @@ async function parseDigifortResponse(response: Response): Promise<any> {
 
 /**
  * Transform Digifort camera object to frontend schema format
- * Digifort API uses capitalized fields (Name, Active, Group) -> frontend expects lowercase (name, active, group)
+ * 
+ * The Digifort API uses PascalCase field names (Name, Active, Group),
+ * while the frontend expects camelCase (name, active, group).
+ * 
+ * This function transforms a camera object from Digifort format to frontend format:
+ * - Name -> name
+ * - Active -> active
+ * - DeviceType -> deviceType
+ * - ConnectionAddress -> connectionAddress
+ * etc.
+ * 
+ * @param camera - Camera object from Digifort API
+ * @returns Camera object in frontend format, or null if input is invalid
  */
 function transformCamera(camera: any): any {
   if (!camera) return null;
@@ -65,6 +124,14 @@ function transformCamera(camera: any): any {
 
 /**
  * Transform Digifort group object to frontend schema format
+ * 
+ * Converts group data from Digifort PascalCase format to frontend camelCase:
+ * - Name -> name
+ * - Cameras -> cameras
+ * - Active -> active
+ * 
+ * @param group - Group object from Digifort API
+ * @returns Group object in frontend format, or null if input is invalid
  */
 function transformGroup(group: any): any {
   if (!group) return null;
@@ -78,7 +145,26 @@ function transformGroup(group: any): any {
 
 /**
  * Extract data from Digifort API response structure
- * Handles: { Response: { Data: { ... } } } or direct data
+ * 
+ * Digifort API wraps responses in a standard structure:
+ * {
+ *   "Response": {
+ *     "Code": 0,
+ *     "Message": "OK",
+ *     "Data": {
+ *       "Cameras": [...],  // Actual data is here
+ *       "Groups": [...],
+ *       etc.
+ *     }
+ *   }
+ * }
+ * 
+ * This function extracts the actual data from this wrapper structure.
+ * It also handles direct data responses (when the API doesn't use the wrapper).
+ * 
+ * @param responseData - The full response object from Digifort API
+ * @param dataKey - Optional key to extract from the Data object (e.g., "Cameras")
+ * @returns The extracted data, or the original response if no wrapper is found
  */
 function extractDigifortData(responseData: any, dataKey?: string): any {
   // If response has Digifort structure: { Response: { Data: { ... } } }
@@ -98,14 +184,81 @@ function extractDigifortData(responseData: any, dataKey?: string): any {
   return responseData;
 }
 
-async function proxyRequest(endpoint: string, options: RequestInit = {}, retryCount = 0): Promise<any> {
+/**
+ * Proxy request to Mock Server (or Digifort API if configured)
+ * 
+ * This function forwards requests to either:
+ * - Mock Server (default): http://localhost:8089 - provides sample data
+ * - Digifort API (if configured): Real security platform API
+ * 
+ * For Mock Server:
+ * - No authentication required
+ * - Returns sample data for all features
+ * - Run with: python mock_server/app.py
+ * 
+ * For Digifort API (commented out):
+ * 1. Adds authentication (Basic Auth header or Safe Auth URL parameters)
+ * 2. Sends the request to the Digifort API
+ * 3. Handles authentication errors (Code 101) with automatic retry
+ * 4. Parses and returns the response
+ * 
+ * @param endpoint - The API endpoint path (e.g., "/Interface/Cameras/GetCameras")
+ * @param options - Fetch API options (method, headers, body, etc.)
+ * @param retryCount - Current retry count (used internally, starts at 0)
+ * @returns Promise that resolves to the parsed response data
+ * @throws Error if the request fails after retries
+ */
+async function proxyRequest(
+  endpoint: string,
+  options: RequestInit = {},
+  retryCount = 0
+): Promise<any> {
   try {
+    // ============================================
+    // MOCK SERVER MODE (ACTIVE)
+    // ============================================
+    // Simple direct request to mock server - no authentication required
+    const fullUrl = `${MOCK_SERVER_URL}${endpoint}`;
+    
+    const headers: Record<string, string> = {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      ...options.headers as Record<string, string>,
+    };
+    
+    if (proxyRequestLogCount < 3) {
+      console.log(`[PROXY] Mock Server Request: ${fullUrl}`);
+      proxyRequestLogCount++;
+    }
+    
+    const response = await fetch(fullUrl, {
+      ...options,
+      headers,
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`[PROXY] Mock server request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+      throw new Error(`Mock server request failed: ${response.status} ${response.statusText}`);
+    }
+    
+    const responseData = await response.json();
+    return responseData;
+    
+    // ============================================
+    // DIGIFORT API MODE (COMMENTED OUT)
+    // ============================================
+    // To use Digifort API instead of mock server, uncomment below and comment above
+    /*
     // Add ResponseFormat=JSON to request JSON format explicitly
     const separator = endpoint.includes("?") ? "&" : "?";
     const endpointWithFormat = `${endpoint}${separator}ResponseFormat=JSON`;
     
+    // Import auth functions
+    const { addAuthToUrl, getBasicAuthHeader } = await import("./auth");
+    
     // Add authentication parameters to the endpoint URL (for Safe auth) or prepare Basic auth header
-    const authenticatedUrl = await addAuthToUrl(`${MOCK_SERVER_URL}${endpointWithFormat}`);
+    const authenticatedUrl = await addAuthToUrl(`${DIGIFORT_API_URL}${endpointWithFormat}`);
     const basicAuthHeader = getBasicAuthHeader();
     
     // Prepare headers
@@ -128,7 +281,6 @@ async function proxyRequest(endpoint: string, options: RequestInit = {}, retryCo
       if (basicAuthHeader) {
         const maskedAuth = basicAuthHeader.substring(0, 15) + "***";
         console.log(`[PROXY] Authorization Header: ${maskedAuth}`);
-        console.log(`[PROXY] Using Basic HTTP Authentication`);
       } else {
         console.log(`[PROXY] ⚠️  No Authorization header!`);
       }
@@ -144,30 +296,23 @@ async function proxyRequest(endpoint: string, options: RequestInit = {}, retryCo
     const responseData = await parseDigifortResponse(response);
     
     // Check for authentication error (Code 101) in response body
-    // Digifort returns HTTP 200 but with Code 101 in response body for auth errors
     if (responseData.Response?.Code === 101 || responseData.Code === 101) {
       if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
-        // Only retry with Safe auth (Basic auth doesn't use sessions)
-        // Log the actual URL being used for debugging (first failure only)
+        // Only retry with Safe auth
         if (!proxyRequestFirstFailure) {
           const maskedUrl = authenticatedUrl.replace(/AuthData=[A-F0-9]+/i, 'AuthData=***');
           console.log(`[PROXY] Authentication error (Code 101) for ${endpoint}`);
           console.log(`[PROXY] Request URL: ${maskedUrl}`);
-          console.log(`[PROXY] Response:`, JSON.stringify(responseData, null, 2));
           proxyRequestFirstFailure = true;
         }
         
         console.log(`[PROXY] Clearing session and retrying ${endpoint}...`);
         const { clearAuthSession } = await import("./auth");
-        await clearAuthSession(); // Wait for session clearing to complete
-        // Small delay to ensure new session is ready
+        await clearAuthSession();
         await new Promise(resolve => setTimeout(resolve, 200));
-        // Retry once with new session
         return await proxyRequest(endpoint, options, retryCount + 1);
       } else {
-        // Already retried or using Basic auth, return the error response
-        console.error(`[PROXY] Authentication failed for ${endpoint}. This may indicate insufficient permissions or incorrect credentials.`);
-        console.error(`[PROXY] Response:`, JSON.stringify(responseData, null, 2));
+        console.error(`[PROXY] Authentication failed for ${endpoint}`);
         return responseData;
       }
     }
@@ -176,142 +321,141 @@ async function proxyRequest(endpoint: string, options: RequestInit = {}, retryCo
     if (response.status === 401 || response.status === 403) {
       const errorText = await response.text();
       
-      // Handle 401 Unauthorized specifically with detailed logging
       if (response.status === 401) {
         console.error(`[PROXY] 401 Unauthorized for ${endpoint}`);
-        console.error(`[PROXY] Response: ${errorText.substring(0, 500)}`);
-        
         if (basicAuthHeader) {
-          const username = process.env.DIGIFORT_USERNAME || "NOT SET";
-          const password = process.env.DIGIFORT_PASSWORD || "";
-          const testHeader = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
           console.error(`[PROXY] ⚠️  Basic auth header was sent but rejected by server.`);
-          console.error(`[PROXY]    Username: "${username}"`);
-          console.error(`[PROXY]    Password: ${password ? "***SET***" : "(empty - no password)"}`);
-          console.error(`[PROXY]    Auth Header: ${testHeader.substring(0, 20)}...`);
-          console.error(`[PROXY]    Verify credentials are correct for Digifort server at ${MOCK_SERVER_URL}`);
+          console.error(`[PROXY]    Verify credentials are correct for Digifort server`);
         } else {
           console.error(`[PROXY] ⚠️  No Authorization header was sent!`);
-          console.error(`[PROXY]    Set DIGIFORT_USERNAME environment variable`);
         }
-        
-        throw new Error(`Authentication failed: 401 Unauthorized. Check credentials.`);
+        throw new Error(`Authentication failed: 401 Unauthorized`);
       }
       
       if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
-        // Only retry with Safe auth (Basic auth failures are usually credential issues)
-        console.log(`[PROXY] Authentication failed (${response.status}) for ${endpoint}, clearing session and retrying...`);
+        console.log(`[PROXY] Authentication failed (${response.status}) for ${endpoint}, retrying...`);
         const { clearAuthSession } = await import("./auth");
-        await clearAuthSession(); // Wait for session clearing to complete
+        await clearAuthSession();
         await new Promise(resolve => setTimeout(resolve, 200));
         return await proxyRequest(endpoint, options, retryCount + 1);
       } else {
-        console.error(`[PROXY] Authentication failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+        console.error(`[PROXY] Authentication failed for ${endpoint}: ${response.status}`);
         throw new Error(`API request failed: ${response.status} ${response.statusText}`);
       }
     }
     
     if (!response.ok) {
       const errorText = await response.text();
-      
-      console.error(`[PROXY] Request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+      console.error(`[PROXY] Request failed for ${endpoint}: ${response.status}`);
       throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
     
     return responseData;
+    */
   } catch (error) {
     console.error(`[PROXY] Error in proxyRequest for ${endpoint}:`, error instanceof Error ? error.message : error);
     throw error;
   }
 }
 
+/**
+ * Register all API routes for the application
+ * 
+ * This function sets up all the Express routes that proxy requests to the Digifort API:
+ * 
+ * Dashboard & System:
+ * - GET /api/dashboard/stats - System statistics (camera counts, events, storage)
+ * - GET /api/system/status - System status (CPU, memory, uptime)
+ * 
+ * Cameras:
+ * - GET /api/cameras - Get all cameras
+ * - GET /api/cameras/groups - Get camera groups
+ * - GET /api/cameras/:name/status - Get status of specific camera
+ * - POST /api/cameras/:name/activation - Activate/deactivate a camera
+ * 
+ * Analytics:
+ * - GET /api/analytics/configurations - Get analytics configurations
+ * - GET /api/analytics/counters - Get analytics counters
+ * - POST /api/analytics/counters/:id/reset - Reset a counter
+ * - GET /api/analytics/events - Search for events (with filters)
+ * - GET /api/analytics/events/recent - Get recent events
+ * - GET /api/analytics/chart - Get chart data for analytics
+ * 
+ * Audit:
+ * - GET /api/audit/logs - Search audit logs (with filters)
+ * 
+ * Bookmarks:
+ * - GET /api/bookmarks - Search bookmarks
+ * - POST /api/bookmarks - Create a new bookmark
+ * - DELETE /api/bookmarks/:id - Delete a bookmark
+ * 
+ * All routes handle errors gracefully and return 502 Bad Gateway if the
+ * upstream Digifort API is unavailable.
+ * 
+ * @param httpServer - HTTP server instance
+ * @param app - Express application instance
+ * @returns Promise that resolves to the HTTP server
+ */
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
+  /**
+   * GET /api/dashboard/stats
+   * 
+   * Get dashboard statistics including:
+   * - Total cameras, active cameras, recording cameras, offline cameras
+   * - Total events and critical events count
+   * - Storage information (total and used)
+   * 
+   * This endpoint aggregates data from multiple Digifort API endpoints
+   * to provide a comprehensive dashboard overview.
+   */
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      // Fetch cameras to calculate stats
-      const camerasData = await proxyRequest("/Interface/Cameras/GetCameras");
-      const cameras = extractDigifortData(camerasData, "Cameras");
-      const camerasArray = Array.isArray(cameras) ? cameras : [];
-      
-      // Calculate stats from camera data
-      const totalCameras = camerasArray.length;
-      const activeCameras = camerasArray.filter(c => c.Active === true).length;
-      const recordingCameras = camerasArray.filter(c => 
-        c.MediaProfiles && c.MediaProfiles.includes("Recording")
-      ).length;
-      const offlineCameras = camerasArray.filter(c => c.Active === false).length;
-      
-      // Try to get system info for storage data (optional)
-      let totalStorage = "N/A";
-      let usedStorage = "N/A";
-      let criticalEvents = 0;
-      let totalEvents = 0;
-      
-      try {
-        const systemData = await proxyRequest("/Interface/Server/GetInfo");
-        const serverInfo = extractDigifortData(systemData, "ServerInfo");
-        if (serverInfo?.TotalStorage) {
-          totalStorage = serverInfo.TotalStorage;
-        }
-        if (serverInfo?.UsedStorage) {
-          usedStorage = serverInfo.UsedStorage;
-        }
-      } catch (err) {
-        // Storage data is optional, continue without it
-        console.log("[STATS] Could not fetch storage info:", err instanceof Error ? err.message : err);
-      }
-      
-      // Try to get events count (optional)
-      try {
-        const eventsData = await proxyRequest("/Interface/Analytics/Search?");
-        const events = extractDigifortData(eventsData, "Events");
-        if (Array.isArray(events)) {
-          totalEvents = events.length;
-          criticalEvents = events.filter((e: any) => e.Severity === "Critical" || e.Priority === "High").length;
-        }
-      } catch (err) {
-        // Events data is optional, continue without it
-        console.log("[STATS] Could not fetch events info:", err instanceof Error ? err.message : err);
-      }
-      
-      const stats = {
-        totalCameras,
-        activeCameras,
-        recordingCameras,
-        offlineCameras,
-        totalEvents,
-        criticalEvents,
-        totalStorage,
-        usedStorage,
-      };
-      
-      res.json(stats);
-    } catch (error) {
-      upstreamError(res, error);
-    }
-  });
-
-  app.get("/api/system/status", async (req, res) => {
-    try {
-      // Use Server/GetInfo for system information
-      const data = await proxyRequest("/Interface/Server/GetInfo");
-      
-      // Check for authentication error
-      if (data.Response?.Code === 101 || data.Code === 101) {
-        res.status(401).json({ message: "Authentication error", code: 101 });
-        return;
-      }
-      
+      // Use mock server's Dashboard/Stats endpoint directly
+      const data = await proxyRequest("/Interface/Dashboard/Stats");
       res.json(data);
     } catch (error) {
       upstreamError(res, error);
     }
   });
 
+  /**
+   * GET /api/system/status
+   * 
+   * Get system status from Mock Server:
+   * - Server status (online/offline)
+   * - CPU usage
+   * - Memory usage
+   * - Disk usage
+   * - Uptime
+   * - Last sync timestamp
+   * 
+   * Proxies to /Interface/System/Status endpoint.
+   */
+  app.get("/api/system/status", async (req, res) => {
+    try {
+      // Use mock server's System/Status endpoint
+      const data = await proxyRequest("/Interface/System/Status");
+      res.json(data);
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  /**
+   * GET /api/cameras
+   * 
+   * Get all cameras from Digifort API.
+   * 
+   * Proxies to /Interface/Cameras/GetCameras endpoint and transforms
+   * the response from Digifort format (PascalCase) to frontend format (camelCase).
+   * 
+   * Returns: Array of camera objects with fields like name, active, model,
+   * deviceType, connectionAddress, latitude, longitude, etc.
+   */
   app.get("/api/cameras", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/GetCameras");
@@ -326,6 +470,16 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/cameras/groups
+   * 
+   * Get all camera groups from Digifort API.
+   * 
+   * Proxies to /Interface/Cameras/GetGroups endpoint and transforms
+   * the response from Digifort format to frontend format.
+   * 
+   * Returns: Array of group objects with name, cameras array, and active status.
+   */
   app.get("/api/cameras/groups", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/GetGroups");
@@ -340,6 +494,14 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/cameras/:name/status
+   * 
+   * Get status of a specific camera by name.
+   * 
+   * Proxies to /Interface/Cameras/GetStatus endpoint with the camera name.
+   * Returns: Single camera object with current status, or null if not found.
+   */
   app.get("/api/cameras/:name/status", async (req, res) => {
     try {
       const data = await proxyRequest(`/Interface/Cameras/GetStatus?Cameras=${encodeURIComponent(req.params.name)}`);
@@ -357,6 +519,14 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * POST /api/cameras/:name/activation
+   * 
+   * Activate or deactivate a camera.
+   * 
+   * Request body: { action: "activate" | "deactivate" }
+   * Proxies to /Interface/Cameras/Activation endpoint.
+   */
   app.post("/api/cameras/:name/activation", async (req, res) => {
     try {
       const { action } = req.body;
@@ -370,6 +540,13 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/analytics/configurations
+   * 
+   * Get all analytics configurations (AI/ML analysis rules).
+   * 
+   * Returns: Array of configuration objects with name, camera, events, status, etc.
+   */
   app.get("/api/analytics/configurations", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/GetAnalyticsConfigurations");
@@ -380,6 +557,13 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/analytics/counters
+   * 
+   * Get all analytics counters (people count, vehicle count, etc.).
+   * 
+   * Returns: Array of counter objects with id, name, value, lastReset, etc.
+   */
   app.get("/api/analytics/counters", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/GetCounters");
@@ -390,6 +574,13 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * POST /api/analytics/counters/:id/reset
+   * 
+   * Reset a specific analytics counter to zero.
+   * 
+   * Request body: { counterId: string }
+   */
   app.post("/api/analytics/counters/:id/reset", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/ResetCounter", {
@@ -402,6 +593,19 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/analytics/events
+   * 
+   * Search for analytics events with optional filters.
+   * 
+   * Query parameters:
+   * - startDate: Filter events after this date
+   * - endDate: Filter events before this date
+   * - cameras: Comma-separated list of camera names
+   * - eventTypes: Comma-separated list of event types
+   * 
+   * Returns: Array of event objects with camera, timestamp, eventType, etc.
+   */
   app.get("/api/analytics/events", async (req, res) => {
     try {
       const queryParams = new URLSearchParams();
@@ -418,6 +622,13 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/analytics/events/recent
+   * 
+   * Get the 10 most recent analytics events.
+   * 
+   * Returns: Array of the 10 most recent event objects.
+   */
   app.get("/api/analytics/events/recent", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/Search");
@@ -429,26 +640,36 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/analytics/chart
+   * 
+   * Get event data for analytics charts (last 24 hours).
+   * 
+   * Returns: Array of hourly event data for charting.
+   */
   app.get("/api/analytics/chart", async (req, res) => {
     try {
-      // Analytics chart data comes from Analytics/Search endpoint
-      // Return empty data or use Search with date range
-      const queryParams = new URLSearchParams();
-      const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(startDate.getDate() - 7); // Last 7 days
-      
-      queryParams.set("StartDate", startDate.toISOString().split('T')[0].replace(/-/g, '.'));
-      queryParams.set("EndDate", endDate.toISOString().split('T')[0].replace(/-/g, '.'));
-      
-      const data = await proxyRequest(`/Interface/Analytics/Search?${queryParams.toString()}`);
-      const events = extractDigifortData(data, "Events");
-      res.json(Array.isArray(events) ? events : []);
+      // Use mock server's Analytics/Chart endpoint
+      const data = await proxyRequest("/Interface/Analytics/Chart");
+      res.json(data);
     } catch (error) {
       upstreamError(res, error);
     }
   });
 
+  /**
+   * GET /api/audit/logs
+   * 
+   * Search audit logs with optional filters.
+   * 
+   * Query parameters:
+   * - startDate: Filter logs after this date
+   * - endDate: Filter logs before this date
+   * - category: Filter by category (USER_ACTION, SERVER_CONNECTION, etc.)
+   * - keyword: Search in action and details fields
+   * 
+   * Returns: Array of audit log objects with timestamp, category, action, user, etc.
+   */
   app.get("/api/audit/logs", async (req, res) => {
     try {
       const queryParams = new URLSearchParams();
@@ -465,6 +686,17 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * GET /api/bookmarks
+   * 
+   * Search bookmarks with optional filters.
+   * 
+   * Query parameters:
+   * - keyword: Search in title and remarks fields
+   * - colors: Comma-separated list of colors to filter by
+   * 
+   * Returns: Array of bookmark objects.
+   */
   app.get("/api/bookmarks", async (req, res) => {
     try {
       const queryParams = new URLSearchParams();
@@ -479,6 +711,22 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * POST /api/bookmarks
+   * 
+   * Create a new bookmark for video footage.
+   * 
+   * Request body: {
+   *   title: string,
+   *   color: string,
+   *   startDate: string,
+   *   startTime: string,
+   *   endDate: string,
+   *   endTime: string,
+   *   cameras: string[],
+   *   remarks: string
+   * }
+   */
   app.post("/api/bookmarks", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/Bookmarks/Add", {
@@ -491,6 +739,13 @@ export async function registerRoutes(
     }
   });
 
+  /**
+   * DELETE /api/bookmarks/:id
+   * 
+   * Delete a bookmark by ID.
+   * 
+   * Proxies to /Interface/Cameras/Bookmarks/Delete endpoint.
+   */
   app.delete("/api/bookmarks/:id", async (req, res) => {
     try {
       const data = await proxyRequest(`/Interface/Cameras/Bookmarks/Delete?id=${req.params.id}`, {

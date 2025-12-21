@@ -1,28 +1,72 @@
+/**
+ * Digifort API Authentication Module
+ * 
+ * This module handles authentication with the Digifort security platform API.
+ * It supports two authentication methods:
+ * 
+ * 1. Basic HTTP Authentication (Recommended for simplicity)
+ *    - Uses standard HTTP Basic Auth with Base64-encoded credentials
+ *    - Set DIGIFORT_AUTH_METHOD="basic" in environment variables
+ *    - No session management required
+ * 
+ * 2. Safe Authentication (More secure, but more complex)
+ *    - Uses MD5 hashing with session management
+ *    - Requires session creation and periodic keep-alive updates
+ *    - Set DIGIFORT_AUTH_METHOD="safe" in environment variables
+ * 
+ * Environment Variables:
+ * - DIGIFORT_API_URL: The base URL of the Digifort API server
+ * - DIGIFORT_USERNAME: Username for authentication
+ * - DIGIFORT_PASSWORD: Password for authentication
+ * - DIGIFORT_AUTH_METHOD: "basic" or "safe" (default: "basic")
+ */
+
 import { createHash } from "crypto";
 
+// Configuration from environment variables
 const DIGIFORT_API_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
 const DIGIFORT_USERNAME = process.env.DIGIFORT_USERNAME || "";
 const DIGIFORT_PASSWORD = process.env.DIGIFORT_PASSWORD || "";
 const AUTH_METHOD = process.env.DIGIFORT_AUTH_METHOD || "basic"; // "basic" or "safe"
 
+/**
+ * Interface for Safe Authentication session
+ * Used to track active authentication sessions with the Digifort API
+ */
 interface AuthSession {
-  sessionId: number;
-  nonce: string;
-  lastActivity: number;
+  sessionId: number;      // Session ID returned by CreateAuthSession
+  nonce: string;          // Nonce value for MD5 hash calculation
+  lastActivity: number;   // Timestamp of last activity (for timeout detection)
 }
 
+// Session management state
 let currentAuthSession: AuthSession | null = null;
 const SESSION_TIMEOUT = 60 * 1000; // 60 seconds of inactivity (as per Digifort docs)
 let keepAliveInterval: NodeJS.Timeout | null = null;
 let sessionCreationPromise: Promise<AuthSession> | null = null; // Prevent concurrent session creation
 let sessionClearingPromise: Promise<void> | null = null; // Prevent concurrent session clearing
-let getAuthParamsLogCount = 0; // Debug counter
+
+// Debug logging flags
+let getAuthParamsLogCount = 0; // Debug counter for auth params logging
 let basicAuthHeaderLogged = false; // Debug flag for Basic auth header logging
 
 /**
- * Calculate MD5 hash for authentication data
+ * Calculate MD5 hash for Safe Authentication
+ * 
+ * This function implements the Digifort Safe Authentication algorithm:
  * Formula: UpperCase(MD5Hash(NOnce + ":" + UpperCase(Username) + ":" + UpperCase(MD5Hash(Password))))
+ * 
+ * Steps:
+ * 1. Hash the password with MD5 and convert to uppercase
+ * 2. Build auth string: NONCE + ":" + UPPERCASE(USERNAME) + ":" + UPPERCASE(MD5(PASSWORD))
+ * 3. Hash the auth string with MD5 and convert to uppercase
+ * 
  * Example: MD5(NONCE + ":" + "ADMIN" + ":" + UPPERCASE(MD5("pass")))
+ * 
+ * @param username - The username for authentication
+ * @param password - The password for authentication
+ * @param nonce - The nonce value from the authentication session
+ * @returns The calculated AuthData string (MD5 hash in uppercase)
  */
 function calculateAuthData(username: string, password: string, nonce: string): string {
   // Step 1: Calculate MD5 hash of password and convert to uppercase
@@ -63,6 +107,22 @@ function calculateAuthData(username: string, password: string, nonce: string): s
 
 /**
  * Parse XML response from Digifort API
+ * 
+ * Digifort API can return XML responses in this format:
+ * <Response>
+ *   <Data>
+ *     <Session>
+ *       <ID>32</ID>
+ *       <NOnce>164EF22C...</NOnce>
+ *     </Session>
+ *   </Data>
+ * </Response>
+ * 
+ * This function extracts the Session ID and NONCE from the XML.
+ * 
+ * @param xmlText - The XML response text from the Digifort API
+ * @returns Object containing sessionId and nonce
+ * @throws Error if the XML cannot be parsed or is missing required fields
  */
 function parseXMLResponse(xmlText: string): { sessionId: number; nonce: string } {
   // Simple XML parsing for Digifort response format
@@ -81,9 +141,40 @@ function parseXMLResponse(xmlText: string): { sessionId: number; nonce: string }
 }
 
 /**
- * Create a new authentication session with Digifort API
- * Response format: { "Response": { "Code": 0, "Message": "OK", "Data": { "Session": { "ID": 32, "NOnce": "..." } } } }
- * Or XML: <Response><Data><Session><ID>32</ID><NOnce>...</NOnce></Session></Data></Response>
+ * Create a new authentication session with Digifort API (Safe Authentication)
+ * 
+ * This function calls the /Interface/CreateAuthSession endpoint to establish
+ * a new authentication session. The session provides a Session ID and NONCE
+ * which are used to calculate the AuthData for subsequent API requests.
+ * 
+ * Expected Response Formats:
+ * 
+ * JSON: 
+ * {
+ *   "Response": {
+ *     "Code": 0,
+ *     "Message": "OK",
+ *     "Data": {
+ *       "Session": {
+ *         "ID": 32,
+ *         "NOnce": "164EF22C..."
+ *       }
+ *     }
+ *   }
+ * }
+ * 
+ * XML:
+ * <Response>
+ *   <Data>
+ *     <Session>
+ *       <ID>32</ID>
+ *       <NOnce>164EF22C...</NOnce>
+ *     </Session>
+ *   </Data>
+ * </Response>
+ * 
+ * @returns AuthSession object containing sessionId, nonce, and lastActivity timestamp
+ * @throws Error if the session creation fails or response format is invalid
  */
 async function createAuthSession(): Promise<AuthSession> {
   try {
@@ -186,6 +277,9 @@ async function createAuthSession(): Promise<AuthSession> {
 
 /**
  * Update session activity timestamp
+ * 
+ * Called whenever the session is used to reset the inactivity timeout.
+ * Sessions expire after 60 seconds of inactivity according to Digifort docs.
  */
 function updateSessionActivity(): void {
   if (currentAuthSession) {
@@ -195,6 +289,12 @@ function updateSessionActivity(): void {
 
 /**
  * Keep authentication session alive by calling UpdateAuthSession
+ * 
+ * This function calls the /Interface/UpdateAuthSession endpoint to refresh
+ * the authentication session and prevent timeout. It's called automatically
+ * every 50 seconds by the keep-alive interval (sessions expire after 60s).
+ * 
+ * @returns Promise that resolves when the session is refreshed
  */
 async function keepSessionAlive(): Promise<void> {
   if (!currentAuthSession) return;
@@ -215,7 +315,13 @@ async function keepSessionAlive(): Promise<void> {
 }
 
 /**
- * Start keep-alive interval (call UpdateAuthSession every 50 seconds)
+ * Start keep-alive interval for Safe Authentication
+ * 
+ * Starts an interval that calls UpdateAuthSession every 50 seconds
+ * to keep the authentication session alive. Sessions expire after
+ * 60 seconds of inactivity, so we refresh every 50 seconds to be safe.
+ * 
+ * This is only used for Safe Authentication, not Basic Auth.
  */
 function startKeepAlive(): void {
   if (keepAliveInterval) {
@@ -232,6 +338,9 @@ function startKeepAlive(): void {
 
 /**
  * Stop keep-alive interval
+ * 
+ * Stops the automatic session refresh interval.
+ * Called when clearing the session or shutting down.
  */
 function stopKeepAlive(): void {
   if (keepAliveInterval) {
@@ -241,7 +350,17 @@ function stopKeepAlive(): void {
 }
 
 /**
- * Get current valid authentication session, creating one if needed
+ * Get current valid authentication session, creating one if needed (Safe Authentication)
+ * 
+ * This function ensures a valid authentication session exists:
+ * - Returns the current session if it's still valid (not timed out)
+ * - Creates a new session if the current one is expired or missing
+ * - Prevents concurrent session creation by using a promise
+ * 
+ * Sessions are considered valid if they were used within the last 60 seconds.
+ * 
+ * @returns Promise that resolves to a valid AuthSession
+ * @throws Error if session creation fails
  */
 async function getAuthSession(): Promise<AuthSession> {
   // Check if we have a valid session (not expired due to inactivity)
@@ -275,7 +394,18 @@ async function getAuthSession(): Promise<AuthSession> {
 }
 
 /**
- * Get authentication parameters (AuthSession and AuthData) for API requests
+ * Get authentication parameters (AuthSession and AuthData) for API requests (Safe Authentication)
+ * 
+ * This function returns the authentication parameters needed for Digifort API requests
+ * when using Safe Authentication:
+ * - AuthSession: The session ID from the current authentication session
+ * - AuthData: MD5 hash calculated from username, password, and nonce
+ * 
+ * These parameters are added to the URL query string for authenticated requests:
+ * ?AuthSession=32&AuthData=AF63604073043A3C47FB5A506D8A8EFD
+ * 
+ * @returns Object containing AuthSession and AuthData strings
+ * @returns Empty strings if no username is configured (allows testing without auth)
  */
 export async function getAuthParams(): Promise<{ AuthSession: string; AuthData: string }> {
   if (!DIGIFORT_USERNAME) {
@@ -320,7 +450,16 @@ export async function getAuthParams(): Promise<{ AuthSession: string; AuthData: 
 
 /**
  * Get Basic HTTP Authentication header (Base64 encoded username:password)
- * Handles empty passwords (username:)
+ * 
+ * This function creates a standard HTTP Basic Authentication header:
+ * Authorization: Basic base64(username:password)
+ * 
+ * The header is sent with every API request when using Basic Authentication.
+ * This is simpler than Safe Authentication as it doesn't require session management.
+ * 
+ * Note: Handles empty passwords correctly (username: format)
+ * 
+ * @returns Basic Auth header string or null if no username is configured
  */
 export function getBasicAuthHeader(): string | null {
   if (!DIGIFORT_USERNAME) {
@@ -350,6 +489,19 @@ export function getBasicAuthHeader(): string | null {
 
 /**
  * Add authentication parameters to a URL (for Safe authentication)
+ * 
+ * This function appends AuthSession and AuthData query parameters to a URL
+ * for Safe Authentication. It's used by the proxy module to authenticate
+ * requests to the Digifort API.
+ * 
+ * Example: https://api.digifort.com/Interface/Cameras/GetCameras
+ * becomes: https://api.digifort.com/Interface/Cameras/GetCameras?AuthSession=32&AuthData=AF636...
+ * 
+ * For Basic Authentication, this function returns the URL unchanged since
+ * authentication is handled via the Authorization header instead.
+ * 
+ * @param url - The URL to add authentication parameters to
+ * @returns The URL with authentication parameters appended (or unchanged if using Basic Auth)
  */
 export async function addAuthToUrl(url: string): Promise<string> {
   // If using Basic auth, don't add params to URL
@@ -369,7 +521,15 @@ export async function addAuthToUrl(url: string): Promise<string> {
 
 /**
  * Clear current authentication session (force re-authentication)
- * Prevents concurrent clearing by multiple requests
+ * 
+ * This function clears the current authentication session, forcing
+ * a new session to be created on the next API request. It's called
+ * when authentication errors occur (Code 101) to retry with a fresh session.
+ * 
+ * Prevents concurrent clearing by multiple requests using a promise.
+ * Also stops the keep-alive interval.
+ * 
+ * @returns Promise that resolves when the session is cleared
  */
 export async function clearAuthSession(): Promise<void> {
   // If already clearing, wait for it to complete
@@ -392,6 +552,18 @@ export async function clearAuthSession(): Promise<void> {
 
 /**
  * Initialize authentication on server startup
+ * 
+ * This function is called when the server starts to:
+ * 1. Validate that authentication credentials are configured
+ * 2. Create an initial authentication session (for Safe Auth)
+ * 3. Start the keep-alive interval (for Safe Auth)
+ * 
+ * For Basic Authentication, no session is needed - just validates credentials.
+ * 
+ * If no username is configured, authentication is disabled and API requests
+ * will work without authentication (useful for testing with mock server).
+ * 
+ * @returns Promise that resolves when initialization is complete
  */
 export async function initializeAuth(): Promise<void> {
   if (!DIGIFORT_USERNAME) {

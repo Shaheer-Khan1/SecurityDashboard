@@ -7,7 +7,6 @@ Digifort HTTP API Interface
 
 
 
-
      © 2002 - 2022 by Digifort. All rights reserved.
   2     Digifort HTTP API Interface
 
