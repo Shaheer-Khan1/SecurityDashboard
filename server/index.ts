@@ -4,6 +4,7 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeAuth } from "./auth";
+import { setupVite } from "./vite";
 
 const app = express();
 const httpServer = createServer(app);
@@ -84,13 +85,16 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // Optionally serve the built client when requested; by default the server
-  // runs independently and only exposes API routes.
-  if (process.env.SERVE_CLIENT === "true") {
+  // Set up Vite middleware for development (when not serving static client)
+  // This handles JavaScript modules with correct MIME types
+  if (process.env.SERVE_CLIENT !== "true") {
+    await setupVite(httpServer, app);
+    log("serving client via Vite dev server", "vite");
+  } else {
+    // Optionally serve the built client when requested; by default the server
+    // runs independently and only exposes API routes.
     serveStatic(app);
     log("serving static client from dist/public", "static");
-  } else {
-    log("skipping static client; SERVE_CLIENT is not true", "static");
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT

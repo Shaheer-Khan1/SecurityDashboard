@@ -256,3 +256,7 @@ The mock cameras should have `"status": "recording"` in their data.
 
 **Just restart the backend and refresh the dashboard!** 📊✨
 
+
+
+
+
