@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: security-dashboard
+    env: node
+    region: oregon
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: SERVE_CLIENT=true node dist/index.cjs
+    envVars:
+      - key: SERVE_CLIENT
+        value: "true"
+      - key: NODE_ENV
+        value: production
+    healthCheckPath: /api/dashboard/stats
+
