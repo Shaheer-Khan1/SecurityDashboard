@@ -185,7 +185,7 @@ export default function MoscowUniversityPage() {
     // Load Moscow State University model
     const loader = new GLTFLoader();
     loader.load(
-      '/moscow_state_university.glb',
+      import.meta.env.VITE_MOSCOW_MODEL_URL || '/moscow_state_university.glb',
       (gltf) => {
         const model = gltf.scene;
         

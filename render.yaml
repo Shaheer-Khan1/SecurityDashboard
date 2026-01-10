@@ -12,6 +12,8 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://securitydashboardbackend.onrender.com
+      - key: VITE_MOSCOW_MODEL_URL
+        value: https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb
 
   # Backend API deployment (Web Service)
   - type: web

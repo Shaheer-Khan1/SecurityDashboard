@@ -7,6 +7,7 @@
 - **Service:** Static Site
 - **Environment Variables:**
   - `VITE_API_URL=https://securitydashboardbackend.onrender.com`
+  - `VITE_MOSCOW_MODEL_URL=https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb`
 
 ### Backend (Node.js API)
 - **URL:** https://securitydashboardbackend.onrender.com
@@ -46,6 +47,7 @@ Frontend (React)
 ### Frontend Service (securitydashboard-0o2a)
 ```
 VITE_API_URL=https://securitydashboardbackend.onrender.com
+VITE_MOSCOW_MODEL_URL=https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb
 ```
 
 ### Backend Service (securitydashboardbackend)
