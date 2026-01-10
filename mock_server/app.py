@@ -13,9 +13,7 @@ from datetime import datetime, timedelta
 import random
 import uuid
 import math
-
-app = Flask(__name__)
-CORS(app)
+import os
 
 app = Flask(__name__)
 CORS(app)
@@ -863,4 +861,5 @@ def get_chart_data():
     return jsonify(hours)
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8089, debug=True)
+    port = int(os.environ.get("PORT", 8089))
+    app.run(host="0.0.0.0", port=port, debug=False)
