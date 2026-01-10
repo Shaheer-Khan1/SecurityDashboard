@@ -11,6 +11,8 @@
 ### Backend (Node.js API)
 - **URL:** https://securitydashboardbackend.onrender.com
 - **Service:** Web Service (Node.js)
+- **Build Command:** `npm install --include=dev && npm run build`
+- **Start Command:** `node dist/index.cjs`
 - **Environment Variables:**
   - `NODE_ENV=production`
   - `CLIENT_ORIGIN=https://securitydashboard-0o2a.onrender.com`

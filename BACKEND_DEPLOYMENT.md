@@ -17,7 +17,7 @@ Deploy the backend API as a separate **Web Service** on Render. The backend prov
 | **Region** | Choose closest to your users |
 | **Branch** | `main` (or your production branch) |
 | **Root Directory** | `.` (leave blank - means project root) |
-| **Build Command** | `npm install && npm run build` |
+| **Build Command** | `npm install --include=dev && npm run build` |
 | **Start Command** | `node dist/index.cjs` |
 | **Plan** | Free (or your preferred plan) |
 
