@@ -183,9 +183,15 @@ export default function MoscowUniversityPage() {
     scene.add(ground);
 
     // Load Moscow State University model
+    // Set up Draco decoder for compressed models
+    const dracoLoader = new DRACOLoader();
+    dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
+    
     const loader = new GLTFLoader();
+    loader.setDRACOLoader(dracoLoader);
+    
     loader.load(
-      import.meta.env.VITE_MOSCOW_MODEL_URL || '/moscow_state_university.glb',
+      '/moscow_state_university.glb',
       (gltf) => {
         const model = gltf.scene;
         
