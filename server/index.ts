@@ -4,7 +4,6 @@ import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
 import { initializeAuth } from "./auth";
-import { setupVite } from "./vite";
 
 const app = express();
 const httpServer = createServer(app);
@@ -92,6 +91,8 @@ app.use((req, res, next) => {
     log("serving static client from dist/public", "static");
   } else if (process.env.NODE_ENV !== "production") {
     // Development: use Vite dev server with HMR
+    // Dynamic import to avoid bundling Vite in production
+    const { setupVite } = await import("./vite.js");
     await setupVite(httpServer, app);
     log("serving client via Vite dev server", "vite");
   } else {

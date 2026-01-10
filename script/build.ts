@@ -45,6 +45,15 @@ async function buildAll() {
     ...Object.keys(pkg.devDependencies || {}),
   ];
   const externals = allDeps.filter((dep) => !allowlist.includes(dep));
+  
+  // Always external Vite and plugins (only needed for dev)
+  const alwaysExternal = [
+    "vite",
+    "@vitejs/plugin-react",
+    "@replit/vite-plugin-runtime-error-modal",
+    "@replit/vite-plugin-cartographer",
+    "@replit/vite-plugin-dev-banner",
+  ];
 
   await esbuild({
     entryPoints: ["server/index.ts"],
@@ -56,7 +65,7 @@ async function buildAll() {
       "process.env.NODE_ENV": '"production"',
     },
     minify: true,
-    external: externals,
+    external: [...externals, ...alwaysExternal, "./vite.js"],
     logLevel: "info",
   });
 }
