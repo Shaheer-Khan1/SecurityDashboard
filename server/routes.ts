@@ -228,22 +228,34 @@ async function proxyRequest(
     
     if (proxyRequestLogCount < 3) {
       console.log(`[PROXY] Mock Server Request: ${fullUrl}`);
+      console.log(`[PROXY] MOCK_SERVER_URL env: ${process.env.MOCK_SERVER_URL || 'not set (using default)'}`);
       proxyRequestLogCount++;
     }
     
-    const response = await fetch(fullUrl, {
-      ...options,
-      headers,
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[PROXY] Mock server request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
-      throw new Error(`Mock server request failed: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(fullUrl, {
+        ...options,
+        headers,
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[PROXY] Mock server request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
+        throw new Error(`Mock server request failed: ${response.status} ${response.statusText}`);
+      }
+      
+      const responseData = await response.json();
+      
+      if (proxyRequestLogCount < 3) {
+        console.log(`[PROXY] Successfully received response from mock server for ${endpoint}`);
+      }
+      
+      return responseData;
+    } catch (fetchError) {
+      console.error(`[PROXY] Fetch error for ${endpoint}:`, fetchError instanceof Error ? fetchError.message : fetchError);
+      console.error(`[PROXY] Attempted URL: ${fullUrl}`);
+      throw fetchError;
     }
-    
-    const responseData = await response.json();
-    return responseData;
     
     // ============================================
     // DIGIFORT API MODE (COMMENTED OUT)
@@ -402,6 +414,19 @@ export async function registerRoutes(
 ): Promise<Server> {
   
   /**
+   * GET /health
+   * Simple health check endpoint (doesn't require mock server)
+   */
+  app.get("/health", (_req, res) => {
+    res.json({ 
+      status: "ok", 
+      timestamp: new Date().toISOString(),
+      mockServerUrl: process.env.MOCK_SERVER_URL || "not set",
+      nodeEnv: process.env.NODE_ENV || "not set"
+    });
+  });
+  
+  /**
    * GET /api/dashboard/stats
    * 
    * Get dashboard statistics including:
@@ -459,6 +484,7 @@ export async function registerRoutes(
   app.get("/api/cameras", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Cameras/GetCameras");
+      // Mock server returns: { Cameras: [...] } directly
       // Digifort API returns: { Response: { Data: { Cameras: [...] } } }
       const cameras = extractDigifortData(data, "Cameras");
       const camerasArray = Array.isArray(cameras) ? cameras : [];
@@ -466,6 +492,8 @@ export async function registerRoutes(
       const transformedCameras = camerasArray.map(transformCamera).filter(Boolean);
       res.json(transformedCameras);
     } catch (error) {
+      console.error(`[ROUTES] Error in /api/cameras:`, error instanceof Error ? error.message : error);
+      console.error(`[ROUTES] Error stack:`, error instanceof Error ? error.stack : 'no stack');
       upstreamError(res, error);
     }
   });

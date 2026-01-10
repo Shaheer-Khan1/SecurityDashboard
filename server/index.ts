@@ -71,6 +71,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Log startup configuration
+  log("=== Backend Starting ===", "server");
+  log(`NODE_ENV: ${process.env.NODE_ENV || "not set"}`, "server");
+  log(`PORT: ${process.env.PORT || "5000 (default)"}`, "server");
+  log(`MOCK_SERVER_URL: ${process.env.MOCK_SERVER_URL || "not set (will use localhost:8089)"}`, "server");
+  log(`CLIENT_ORIGIN: ${process.env.CLIENT_ORIGIN || "not set"}`, "server");
+  log(`SERVE_CLIENT: ${process.env.SERVE_CLIENT || "not set"}`, "server");
+  
   // Initialize authentication first
   await initializeAuth();
   

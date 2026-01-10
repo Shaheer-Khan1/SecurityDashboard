@@ -5,6 +5,7 @@ server/public
 vite.config.ts.*
 *.tar.gz
 
-# Large 3D model files
-*.glb
-client/public/moscow_state_university.glb
+# Large 3D model files (now optimized and included)
+# Moscow model is now 5.57 MB (was 109 MB) - safe to commit
+client/public/moscow_state_university1.glb
+client/public/moscow_state_university-web.glb

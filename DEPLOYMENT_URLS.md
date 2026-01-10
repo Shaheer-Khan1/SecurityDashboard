@@ -7,7 +7,7 @@
 - **Service:** Static Site
 - **Environment Variables:**
   - `VITE_API_URL=https://securitydashboardbackend.onrender.com`
-  - `VITE_MOSCOW_MODEL_URL=https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb`
+- **Note:** Moscow State University 3D model (5.57 MB) is now included in the repository after optimization
 
 ### Backend (Node.js API)
 - **URL:** https://securitydashboardbackend.onrender.com
@@ -47,8 +47,8 @@ Frontend (React)
 ### Frontend Service (securitydashboard-0o2a)
 ```
 VITE_API_URL=https://securitydashboardbackend.onrender.com
-VITE_MOSCOW_MODEL_URL=https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb
 ```
+(Moscow 3D model no longer needs external hosting - included in repo)
 
 ### Backend Service (securitydashboardbackend)
 ```

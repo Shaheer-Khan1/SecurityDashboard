@@ -1,15 +1,31 @@
 # 3D Model Hosting Guide
 
-## ✅ Model Hosted on Cloudflare R2
+## ✅ UPDATED: Model Now Included in Repository!
 
-The Moscow State University 3D model is now hosted on Cloudflare R2:
-**URL:** `https://pub-1f4199dff194441a97e27f712ea8f466.r2.dev/moscow_state_university.glb`
+**Problem Solved:** The Moscow State University 3D model has been optimized from 109 MB to **5.57 MB** (95% reduction) and is now included directly in the Git repository!
 
-## Problem
-The Moscow State University 3D model (`moscow_state_university.glb`) is **105 MB**, which exceeds GitHub's 100MB file size limit. It cannot be committed to the repository.
+### Previous Approach (Obsolete)
+- ❌ 109 MB file - too large for GitHub
+- ❌ Required external hosting (Cloudflare R2)
+- ❌ Needed environment variables
+- ❌ CORS configuration required
+- ❌ Slow loading times
 
-## ✅ Solution Implemented
-Using Cloudflare R2 public bucket for hosting the model.
+### Current Approach (Implemented)
+- ✅ 5.57 MB optimized file
+- ✅ Committed directly to repository
+- ✅ No external hosting needed
+- ✅ No environment variables required
+- ✅ Fast loading (95% smaller)
+- ✅ Works on mobile devices
+
+See `MODEL_OPTIMIZATION.md` for full details on the optimization process.
+
+---
+
+## Historical Information
+
+The sections below document previous hosting solutions that are no longer needed.
 
 ## Solutions
 
