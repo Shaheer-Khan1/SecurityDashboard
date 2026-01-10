@@ -11,8 +11,7 @@ services:
         destination: /index.html
     envVars:
       - key: VITE_API_URL
-        # Update this with your backend URL after deploying
-        value: https://security-dashboard-api.onrender.com
+        value: https://securitydashboardbackend.onrender.com
 
   # Backend API deployment (Web Service)
   - type: web
@@ -27,13 +26,8 @@ services:
       - key: NODE_ENV
         value: production
       # Do NOT set SERVE_CLIENT - backend runs in API-only mode
-      # Update this with your frontend URL after deploying
       - key: CLIENT_ORIGIN
-        value: https://security-dashboard-frontend.onrender.com
-      # Mock server URL - won't work in production!
-      # You'll need to either:
-      # 1. Deploy mock server separately and update this URL
-      # 2. Switch to Digifort API (uncomment code in server/routes.ts)
-      # 3. Move mock data into backend
+        value: https://securitydashboard-0o2a.onrender.com
+      # Mock server URL (deployed Python server)
       - key: MOCK_SERVER_URL
-        value: http://localhost:8089
+        value: https://securitydashboardserver.onrender.com

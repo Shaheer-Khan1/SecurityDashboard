@@ -32,7 +32,7 @@ import { addAuthToUrl, getBasicAuthHeader } from "./auth";
 // ============================================
 // Using mock server for development and testing
 // The mock server provides sample data for all features
-const MOCK_SERVER_URL = "http://localhost:8089";
+const MOCK_SERVER_URL = process.env.MOCK_SERVER_URL || "http://localhost:8089";
 
 // Debug counters for logging
 let proxyRequestLogCount = 0;

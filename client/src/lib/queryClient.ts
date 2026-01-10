@@ -1,6 +1,7 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env.VITE_API_URL ||
   "http://localhost:5000") as string;
 
 function resolveApiUrl(url: string): string {
