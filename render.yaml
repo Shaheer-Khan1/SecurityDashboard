@@ -1,15 +1,39 @@
 services:
+  # Frontend deployment (Static Site)
   - type: web
-    name: security-dashboard
+    name: security-dashboard-frontend
+    env: static
+    buildCommand: npm install && npx vite build
+    staticPublishPath: dist/public
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        # Update this with your backend URL after deploying
+        value: https://security-dashboard-api.onrender.com
+
+  # Backend API deployment (Web Service)
+  - type: web
+    name: security-dashboard-api
     env: node
     region: oregon
     plan: free
     buildCommand: npm install && npm run build
-    startCommand: SERVE_CLIENT=true node dist/index.cjs
+    startCommand: node dist/index.cjs
+    healthCheckPath: /api/dashboard/stats
     envVars:
-      - key: SERVE_CLIENT
-        value: "true"
       - key: NODE_ENV
         value: production
-    healthCheckPath: /api/dashboard/stats
-
+      # Do NOT set SERVE_CLIENT - backend runs in API-only mode
+      # Update this with your frontend URL after deploying
+      - key: CLIENT_ORIGIN
+        value: https://security-dashboard-frontend.onrender.com
+      # Mock server URL - won't work in production!
+      # You'll need to either:
+      # 1. Deploy mock server separately and update this URL
+      # 2. Switch to Digifort API (uncomment code in server/routes.ts)
+      # 3. Move mock data into backend
+      - key: MOCK_SERVER_URL
+        value: http://localhost:8089

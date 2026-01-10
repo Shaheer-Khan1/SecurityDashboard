@@ -85,16 +85,18 @@ app.use((req, res, next) => {
     throw err;
   });
 
-  // Set up Vite middleware for development (when not serving static client)
-  // This handles JavaScript modules with correct MIME types
-  if (process.env.SERVE_CLIENT !== "true") {
+  // Determine how to serve the client (if at all)
+  if (process.env.SERVE_CLIENT === "true") {
+    // Production full-stack: serve pre-built static files
+    serveStatic(app);
+    log("serving static client from dist/public", "static");
+  } else if (process.env.NODE_ENV !== "production") {
+    // Development: use Vite dev server with HMR
     await setupVite(httpServer, app);
     log("serving client via Vite dev server", "vite");
   } else {
-    // Optionally serve the built client when requested; by default the server
-    // runs independently and only exposes API routes.
-    serveStatic(app);
-    log("serving static client from dist/public", "static");
+    // Production backend-only: no client serving (API only)
+    log("running in API-only mode (no client serving)", "server");
   }
 
   // ALWAYS serve the app on the port specified in the environment variable PORT
