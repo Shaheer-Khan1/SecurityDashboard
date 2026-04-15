@@ -12,6 +12,7 @@ import {
   Shield,
   GraduationCap,
   Building,
+  Zap,
 } from "lucide-react";
 import {
   Sidebar,
@@ -98,6 +99,12 @@ export function AppSidebar() {
       url: "/events",
       icon: Bell,
       badge: recentEvents.length > 0 ? recentEvents.length.toString() : undefined,
+    },
+    {
+      title: "Smart Connect",
+      url: "/smart-connect",
+      icon: Zap,
+      badge: "TEST",
     },
   ];
 

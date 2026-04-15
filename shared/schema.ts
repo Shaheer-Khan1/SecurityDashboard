@@ -206,6 +206,18 @@ export const systemStatusSchema = z.object({
   diskUsage: z.number(),
   uptime: z.string(),
   lastSync: z.string(),
+  serverInfo: z.object({
+    edition: z.string().optional(),
+    version: z.string().optional(),
+    platform: z.string().optional(),
+    serverType: z.string().optional(),
+  }).optional(),
+  connections: z.number().optional(),
+  clients: z.number().optional(),
+  serverMemoryMB: z.number().optional(),
+  globalMemoryMB: z.number().optional(),
+  inputTraffic: z.string().optional(),
+  outputTraffic: z.string().optional(),
 });
 
 export type SystemStatus = z.infer<typeof systemStatusSchema>;

@@ -17,22 +17,11 @@ import type { Express, Response as ExpressResponse } from "express";
 import { type Server } from "http";
 import { addAuthToUrl, getBasicAuthHeader } from "./auth";
 
-// Digifort API base URL (or mock server URL for development)
+// Digifort API base URL
 // ============================================
-// DIGIFORT API CONFIGURATION (COMMENTED OUT)
+// DIGIFORT API CONFIGURATION (ACTIVE)
 // ============================================
-// To use the Digifort API instead of the mock server:
-// 1. Uncomment the line below
-// 2. Comment out the MOCK_SERVER_URL line that follows
-// 3. Set environment variables: DIGIFORT_USERNAME, DIGIFORT_PASSWORD, DIGIFORT_API_URL
-// const DIGIFORT_API_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
-
-// ============================================
-// MOCK SERVER CONFIGURATION (ACTIVE)
-// ============================================
-// Using mock server for development and testing
-// The mock server provides sample data for all features
-const MOCK_SERVER_URL = process.env.MOCK_SERVER_URL || "http://localhost:8089";
+const DIGIFORT_API_URL = process.env.DIGIFORT_API_URL || "http://192.168.100.164:8601";
 
 // Debug counters for logging
 let proxyRequestLogCount = 0;
@@ -65,11 +54,18 @@ function upstreamError(res: ExpressResponse, _error: unknown) {
 async function parseDigifortResponse(response: Response): Promise<any> {
   const contentType = response.headers.get("content-type") || "";
   
+  // Log response details for debugging
+  console.log(`[PROXY] Response status: ${response.status} ${response.statusText}`);
+  console.log(`[PROXY] Response content-type: ${contentType || '(empty)'}`);
+  
   if (contentType.includes("application/json") || contentType.includes("text/json")) {
     return await response.json();
   } else {
     // Try to parse as JSON first (might be JSON without proper content-type)
     const text = await response.text();
+    
+    // Log first 500 chars of response for debugging
+    console.log(`[PROXY] Response body (first 500 chars): ${text.substring(0, 500)}`);
     
     if (text.trim().startsWith("<?xml") || text.trim().startsWith("<Response")) {
       // XML response - would need XML parser, but for now throw error with helpful message
@@ -215,53 +211,8 @@ async function proxyRequest(
 ): Promise<any> {
   try {
     // ============================================
-    // MOCK SERVER MODE (ACTIVE)
+    // DIGIFORT API MODE (ACTIVE)
     // ============================================
-    // Simple direct request to mock server - no authentication required
-    const fullUrl = `${MOCK_SERVER_URL}${endpoint}`;
-    
-    const headers: Record<string, string> = {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      ...options.headers as Record<string, string>,
-    };
-    
-    if (proxyRequestLogCount < 3) {
-      console.log(`[PROXY] Mock Server Request: ${fullUrl}`);
-      console.log(`[PROXY] MOCK_SERVER_URL env: ${process.env.MOCK_SERVER_URL || 'not set (using default)'}`);
-      proxyRequestLogCount++;
-    }
-    
-    try {
-      const response = await fetch(fullUrl, {
-        ...options,
-        headers,
-      });
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`[PROXY] Mock server request failed for ${endpoint}: ${response.status} - ${errorText.substring(0, 200)}`);
-        throw new Error(`Mock server request failed: ${response.status} ${response.statusText}`);
-      }
-      
-      const responseData = await response.json();
-      
-      if (proxyRequestLogCount < 3) {
-        console.log(`[PROXY] Successfully received response from mock server for ${endpoint}`);
-      }
-      
-      return responseData;
-    } catch (fetchError) {
-      console.error(`[PROXY] Fetch error for ${endpoint}:`, fetchError instanceof Error ? fetchError.message : fetchError);
-      console.error(`[PROXY] Attempted URL: ${fullUrl}`);
-      throw fetchError;
-    }
-    
-    // ============================================
-    // DIGIFORT API MODE (COMMENTED OUT)
-    // ============================================
-    // To use Digifort API instead of mock server, uncomment below and comment above
-    /*
     // Add ResponseFormat=JSON to request JSON format explicitly
     const separator = endpoint.includes("?") ? "&" : "?";
     const endpointWithFormat = `${endpoint}${separator}ResponseFormat=JSON`;
@@ -302,6 +253,15 @@ async function proxyRequest(
     const response = await fetch(authenticatedUrl, {
       ...options,
       headers,
+    }).catch((fetchError) => {
+      // Log detailed fetch error
+      console.error(`[PROXY] Fetch failed for ${endpoint}:`);
+      console.error(`[PROXY]   URL: ${authenticatedUrl}`);
+      console.error(`[PROXY]   Error: ${fetchError.message}`);
+      if (fetchError.cause) {
+        console.error(`[PROXY]   Cause: ${fetchError.cause.code} - ${fetchError.cause.message}`);
+      }
+      throw fetchError;
     });
     
     // Parse response to check for authentication errors in response body
@@ -363,7 +323,6 @@ async function proxyRequest(
     }
     
     return responseData;
-    */
   } catch (error) {
     console.error(`[PROXY] Error in proxyRequest for ${endpoint}:`, error instanceof Error ? error.message : error);
     throw error;
@@ -429,20 +388,60 @@ export async function registerRoutes(
   /**
    * GET /api/dashboard/stats
    * 
-   * Get dashboard statistics including:
-   * - Total cameras, active cameras, recording cameras, offline cameras
-   * - Total events and critical events count
-   * - Storage information (total and used)
+   * Get dashboard statistics from Digifort API including:
+   * - Total cameras, active cameras, working cameras, offline cameras
+   * - Recording cameras, configured to record, waiting to disk
+   * - Total FPS and recorded FPS
+   * - Server usage information
    * 
-   * This endpoint aggregates data from multiple Digifort API endpoints
-   * to provide a comprehensive dashboard overview.
+   * This endpoint aggregates data from multiple Digifort API endpoints:
+   * - /Interface/Cameras/GetCameras - Get all cameras
+   * - /Interface/Cameras/GetStatus - Get camera status
+   * - /Interface/Server/GetUsage - Get server usage stats
    */
   app.get("/api/dashboard/stats", async (req, res) => {
     try {
-      // Use mock server's Dashboard/Stats endpoint directly
-      const data = await proxyRequest("/Interface/Dashboard/Stats");
-      res.json(data);
+      // Fetch cameras and their status in parallel
+      const [camerasData, statusData] = await Promise.all([
+        proxyRequest("/Interface/Cameras/GetCameras"),
+        proxyRequest("/Interface/Cameras/GetStatus"),
+      ]);
+      
+      // Extract camera arrays
+      const cameras = extractDigifortData(camerasData, "Cameras");
+      const camerasArray = Array.isArray(cameras) ? cameras : [];
+      
+      const statusCameras = extractDigifortData(statusData, "Cameras");
+      const statusArray = Array.isArray(statusCameras) ? statusCameras : [];
+      
+      // Calculate stats
+      const totalCameras = camerasArray.length;
+      const activeCameras = camerasArray.filter(c => c.Active === true).length;
+      const deactivatedCameras = camerasArray.filter(c => c.Active === false).length;
+      const workingCameras = statusArray.filter(c => c.Working === true).length;
+      const notWorkingCameras = statusArray.filter(c => c.Working === false).length;
+      
+      // Log the stats
+      console.log(`[DIGIFORT] Dashboard Stats:`);
+      console.log(`[DIGIFORT]   Total: ${totalCameras}`);
+      console.log(`[DIGIFORT]   Activated: ${activeCameras}`);
+      console.log(`[DIGIFORT]   Deactivated: ${deactivatedCameras}`);
+      console.log(`[DIGIFORT]   Working: ${workingCameras}`);
+      console.log(`[DIGIFORT]   Not Working: ${notWorkingCameras}`);
+      
+      // Return stats in dashboard format matching the schema
+      res.json({
+        totalCameras: totalCameras,
+        activeCameras: activeCameras,
+        recordingCameras: workingCameras, // Working cameras are considered recording
+        offlineCameras: notWorkingCameras,
+        totalEvents: 0, // TODO: Implement events counting
+        criticalEvents: 0, // TODO: Implement critical events counting
+        totalStorage: "N/A", // TODO: Implement storage stats
+        usedStorage: "N/A", // TODO: Implement storage stats
+      });
     } catch (error) {
+      console.error(`[ROUTES] Error in /api/dashboard/stats:`, error instanceof Error ? error.message : error);
       upstreamError(res, error);
     }
   });
@@ -450,22 +449,71 @@ export async function registerRoutes(
   /**
    * GET /api/system/status
    * 
-   * Get system status from Mock Server:
-   * - Server status (online/offline)
-   * - CPU usage
-   * - Memory usage
-   * - Disk usage
-   * - Uptime
-   * - Last sync timestamp
+   * Get system status from Digifort Server API:
+   * - Server information
+   * - Server usage statistics
    * 
-   * Proxies to /Interface/System/Status endpoint.
+   * Proxies to /Interface/Server/GetInfo and /Interface/Server/GetUsage endpoints.
    */
   app.get("/api/system/status", async (req, res) => {
     try {
-      // Use mock server's System/Status endpoint
-      const data = await proxyRequest("/Interface/System/Status");
-      res.json(data);
+      // Fetch server info and usage
+      const [serverInfo, serverUsage] = await Promise.all([
+        proxyRequest("/Interface/Server/GetInfo").catch(() => ({})),
+        proxyRequest("/Interface/Server/GetUsage").catch(() => ({})),
+      ]);
+      
+      const info = extractDigifortData(serverInfo, "Info");
+      const stats = extractDigifortData(serverUsage, "Stats");
+      
+      console.log(`[DIGIFORT] Server Info:`, info);
+      console.log(`[DIGIFORT] Server Usage:`, stats);
+      
+      // Format uptime (UpTime is in seconds)
+      const uptimeSeconds = info?.UpTime || 0;
+      const days = Math.floor(uptimeSeconds / 86400);
+      const hours = Math.floor((uptimeSeconds % 86400) / 3600);
+      const minutes = Math.floor((uptimeSeconds % 3600) / 60);
+      const uptimeFormatted = `${days}d ${hours}h ${minutes}m`;
+      
+      // Calculate memory usage percentage
+      const globalMemory = stats?.GlobalMemory || 1;
+      const serverMemory = stats?.ServerMemory || 0;
+      const memoryUsagePercent = Math.round((serverMemory / globalMemory) * 100);
+      
+      // Calculate CPU usage (Processor is 0-100)
+      const cpuUsage = stats?.Processor || 0;
+      
+      // Format memory values to MB
+      const serverMemoryMB = Math.round(serverMemory / (1024 * 1024));
+      const globalMemoryMB = Math.round(globalMemory / (1024 * 1024));
+      
+      // Format traffic (assuming bytes/sec, convert to Kbits/s)
+      const inputTrafficKbps = ((stats?.InputTraffic || 0) * 8 / 1000).toFixed(2);
+      const outputTrafficKbps = ((stats?.OutputTraffic || 0) * 8 / 1000).toFixed(2);
+      
+      res.json({
+        serverStatus: "online" as const,
+        cpuUsage: cpuUsage,
+        memoryUsage: memoryUsagePercent,
+        diskUsage: 0, // TODO: Get disk usage from Digifort API
+        uptime: uptimeFormatted,
+        lastSync: "Just now",
+        serverInfo: {
+          edition: info?.Edition || "Unknown",
+          version: info?.Version || "Unknown",
+          platform: info?.Platform || "Unknown",
+          serverType: info?.ServerType || "Unknown",
+        },
+        connections: stats?.Connections || 0,
+        clients: stats?.Clients || 0,
+        serverMemoryMB: serverMemoryMB,
+        globalMemoryMB: globalMemoryMB,
+        inputTraffic: inputTrafficKbps,
+        outputTraffic: outputTrafficKbps,
+      });
     } catch (error) {
+      console.error(`[ROUTES] Error in /api/system/status:`, error instanceof Error ? error.message : error);
       upstreamError(res, error);
     }
   });
@@ -488,8 +536,21 @@ export async function registerRoutes(
       // Digifort API returns: { Response: { Data: { Cameras: [...] } } }
       const cameras = extractDigifortData(data, "Cameras");
       const camerasArray = Array.isArray(cameras) ? cameras : [];
+      
+      // Log camera data from Digifort
+      console.log(`[DIGIFORT] ✓ Received ${camerasArray.length} cameras from Digifort API`);
+      if (camerasArray.length > 0) {
+        console.log(`[DIGIFORT] Camera sample (first camera):`, {
+          name: camerasArray[0]?.Name || camerasArray[0]?.name,
+          active: camerasArray[0]?.Active || camerasArray[0]?.active,
+          model: camerasArray[0]?.Model || camerasArray[0]?.model,
+          connectionAddress: camerasArray[0]?.ConnectionAddress || camerasArray[0]?.connectionAddress,
+        });
+      }
+      
       // Transform Digifort API format (Name, Active, Group) to frontend format (name, active, group)
       const transformedCameras = camerasArray.map(transformCamera).filter(Boolean);
+      console.log(`[DIGIFORT] Transformed ${transformedCameras.length} cameras for frontend`);
       res.json(transformedCameras);
     } catch (error) {
       console.error(`[ROUTES] Error in /api/cameras:`, error instanceof Error ? error.message : error);
@@ -575,6 +636,29 @@ export async function registerRoutes(
    * 
    * Returns: Array of configuration objects with name, camera, events, status, etc.
    */
+  app.get("/api/analytics/status", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Analytics/GetStatus");
+      const configs = extractDigifortData(data, "AnalyticsConfigurations");
+      const arr = Array.isArray(configs) ? configs : [];
+      console.log(`[DIGIFORT] Analytics status: ${arr.length} configs`);
+      res.json({
+        total: arr.length,
+        active: arr.filter((c: any) => c.Active === true).length,
+        working: arr.filter((c: any) => c.Working === true).length,
+        configs: arr.map((c: any) => ({
+          name: c.Name || c.name || "",
+          active: c.Active ?? false,
+          working: c.Working ?? false,
+          camera: c.Camera || c.camera || "",
+          status: c.StatusMessage || c.Status || "",
+        })),
+      });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
   app.get("/api/analytics/configurations", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/GetAnalyticsConfigurations");
@@ -780,6 +864,214 @@ export async function registerRoutes(
         method: "DELETE",
       });
       res.json(data);
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // IO DEVICES
+  // ============================================================
+  app.get("/api/io-devices", async (req, res) => {
+    try {
+      const [devicesData, statusData] = await Promise.all([
+        proxyRequest("/Interface/IODevices/GetIODevices").catch(() => ({})),
+        proxyRequest("/Interface/IODevices/GetStatus").catch(() => ({})),
+      ]);
+      const devices = extractDigifortData(devicesData, "IODevices") || [];
+      const statuses = extractDigifortData(statusData, "IODevices") || [];
+      const devicesArr = Array.isArray(devices) ? devices : [];
+      const statusArr = Array.isArray(statuses) ? statuses : [];
+      console.log(`[DIGIFORT] IO Devices: ${devicesArr.length} total`);
+      res.json({
+        total: devicesArr.length,
+        active: devicesArr.filter((d: any) => d.Active === true).length,
+        working: statusArr.filter((d: any) => d.Working === true).length,
+        notWorking: statusArr.filter((d: any) => d.Working === false).length,
+        devices: devicesArr.map((d: any) => ({
+          name: d.Name || d.name || "",
+          active: d.Active ?? false,
+          model: d.Model || d.model || "",
+          connectionAddress: d.ConnectionAddress || d.connectionAddress || "",
+        })),
+      });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // USERS & CONNECTIONS
+  // ============================================================
+  app.get("/api/users/connections", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Users/GetConnections").catch(() => ({}));
+      const connections = extractDigifortData(data, "Connections") || extractDigifortData(data, "Users") || [];
+      const arr = Array.isArray(connections) ? connections : [];
+      console.log(`[DIGIFORT] Active connections: ${arr.length}`);
+      res.json({ total: arr.length, connections: arr });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // SERVER LICENSES
+  // ============================================================
+  app.get("/api/server/licenses", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Server/GetLicenses").catch(() => ({}));
+      const licenses = extractDigifortData(data, "Licenses") || {};
+      console.log(`[DIGIFORT] Licenses:`, licenses);
+      res.json(licenses);
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // SERVER MASTER/SLAVE STATUS
+  // ============================================================
+  app.get("/api/server/master-slave", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Server/GetMasterSlaveStatus").catch(() => ({}));
+      const raw = data?.Response?.Data || data || {};
+      // Flatten: convert nested arrays/objects to counts/strings
+      const flatten = (obj: any): Record<string, string> => {
+        const result: Record<string, string> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (Array.isArray(v)) result[k] = `${v.length} item(s)`;
+          else if (typeof v === "object" && v !== null) result[k] = JSON.stringify(v).substring(0, 60);
+          else result[k] = String(v ?? "—");
+        }
+        return result;
+      };
+      const flat = flatten(raw);
+      console.log(`[DIGIFORT] Master/Slave:`, flat);
+      res.json(flat);
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // LPR STATUS
+  // ============================================================
+  app.get("/api/lpr/status", async (req, res) => {
+    try {
+      const [configsData, statusData] = await Promise.all([
+        proxyRequest("/Interface/LPR/GetLPRConfigurations").catch(() => ({})),
+        proxyRequest("/Interface/LPR/GetStatus").catch(() => ({})),
+      ]);
+      const configs = extractDigifortData(configsData, "LPRConfigurations") || [];
+      const statuses = extractDigifortData(statusData, "LPRConfigurations") || [];
+      const configsArr = Array.isArray(configs) ? configs : [];
+      const statusArr = Array.isArray(statuses) ? statuses : [];
+      console.log(`[DIGIFORT] LPR configs: ${configsArr.length}`);
+      res.json({
+        total: configsArr.length,
+        active: configsArr.filter((c: any) => c.Active === true).length,
+        working: statusArr.filter((c: any) => c.Working === true).length,
+        configs: configsArr.map((c: any) => ({
+          name: c.Name || c.name || "",
+          active: c.Active ?? false,
+          camera: c.Camera || c.camera || "",
+        })),
+      });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // RTSP STATUS
+  // ============================================================
+  app.get("/api/rtsp/status", async (req, res) => {
+    try {
+      const [configData, statusData] = await Promise.all([
+        proxyRequest("/Interface/RTSP/GetConfig").catch(() => ({})),
+        proxyRequest("/Interface/RTSP/GetStatus").catch(() => ({})),
+      ]);
+      const config = extractDigifortData(configData, "Config") || configData?.Response?.Data || {};
+      const status = extractDigifortData(statusData, "Status") || statusData?.Response?.Data || {};
+      console.log(`[DIGIFORT] RTSP Config:`, config);
+      console.log(`[DIGIFORT] RTSP Status:`, status);
+      res.json({ config, status });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // FAILOVER STATUS
+  // ============================================================
+  app.get("/api/failover/status", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Failover/GetStatus").catch(() => ({}));
+      const raw = extractDigifortData(data, "FailoverMonitors") || 
+                  extractDigifortData(data, "Failover") || 
+                  data?.Response?.Data || {};
+      // If it's an array (list of failover monitors), summarise it
+      if (Array.isArray(raw)) {
+        res.json({
+          total: raw.length,
+          active: raw.filter((f: any) => f.Active === true).length,
+          working: raw.filter((f: any) => f.Working === true).length,
+          monitors: raw.map((f: any) => ({
+            name: f.Name || f.name || "Unknown",
+            active: f.Active ?? false,
+            working: f.Working ?? false,
+            status: f.StatusMessage || f.Status || "",
+          })),
+        });
+      } else {
+        res.json(raw);
+      }
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // GLOBAL EVENTS
+  // ============================================================
+  app.get("/api/events/global", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/GlobalEvents/GetGlobalEvents").catch(() => ({}));
+      const events = extractDigifortData(data, "GlobalEvents") || [];
+      const arr = Array.isArray(events) ? events : [];
+      console.log(`[DIGIFORT] Global events: ${arr.length}`);
+      res.json({ total: arr.length, events: arr });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // SCHEDULED EVENTS
+  // ============================================================
+  app.get("/api/events/scheduled", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/ScheduledEvents/GetScheduledEvents").catch(() => ({}));
+      const events = extractDigifortData(data, "ScheduledEvents") || [];
+      const arr = Array.isArray(events) ? events : [];
+      console.log(`[DIGIFORT] Scheduled events: ${arr.length}`);
+      res.json({ total: arr.length, events: arr });
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  // ============================================================
+  // CAMERA GROUPS (enhanced)
+  // ============================================================
+  app.get("/api/cameras/groups/summary", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Cameras/GetGroups").catch(() => ({}));
+      const groups = extractDigifortData(data, "Groups") || [];
+      const arr = Array.isArray(groups) ? groups : [];
+      console.log(`[DIGIFORT] Camera groups: ${arr.length}`);
+      res.json({ total: arr.length, groups: arr.map((g: any) => ({ name: g.Name || g.name || "" })) });
     } catch (error) {
       upstreamError(res, error);
     }

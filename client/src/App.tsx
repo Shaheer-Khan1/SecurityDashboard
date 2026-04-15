@@ -29,6 +29,7 @@ import NotFound from "@/pages/not-found";
 import ShoppingMallPage from "@/pages/shopping-mall";
 import HighSchoolPage from "@/pages/high-school";
 import MoscowUniversityPage from "@/pages/moscow-university";
+import SmartConnectPage from "@/pages/smart-connect";
 
 function Router() {
   return (
@@ -43,6 +44,7 @@ function Router() {
       <Route path="/shopping-mall" component={ShoppingMallPage} />
       <Route path="/high-school" component={HighSchoolPage} />
       <Route path="/moscow-university" component={MoscowUniversityPage} />
+      <Route path="/smart-connect" component={SmartConnectPage} />
       <Route component={NotFound} />
     </Switch>
   );
