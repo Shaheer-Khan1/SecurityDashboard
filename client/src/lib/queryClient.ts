@@ -4,7 +4,7 @@ const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ||
   import.meta.env.VITE_API_URL ||
   "http://localhost:5000") as string;
 
-function resolveApiUrl(url: string): string {
+export function resolveApiUrl(url: string): string {
   // allow absolute URLs to pass through untouched
   if (/^https?:\/\//i.test(url)) return url;
 

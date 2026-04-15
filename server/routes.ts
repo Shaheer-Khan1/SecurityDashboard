@@ -13,9 +13,55 @@
  * which are then forwarded to the Digifort API with authentication.
  */
 
-import type { Express, Response as ExpressResponse } from "express";
+import type { Express, Request as ExpressRequest, Response as ExpressResponse } from "express";
 import { type Server } from "http";
 import { addAuthToUrl, getBasicAuthHeader } from "./auth";
+
+// ─── SmartConnect in-memory store + SSE ──────────────────────────────────────
+
+interface SmartConnectEvent {
+  eventId: string;
+  eventCode?: string;
+  eventName: string;
+  sourceId: string;
+  sourceType?: string;
+  sourceName: string;
+  timestamp: string;
+  metadata?: Record<string, unknown>;
+  _receivedAt: number;
+}
+
+const smartConnectEvents: SmartConnectEvent[] = [];
+const smartConnectClients: ExpressResponse[] = [];
+const MAX_STORED_EVENTS = 500;
+
+function broadcastSmartConnectEvent(event: SmartConnectEvent) {
+  const payload = `data: ${JSON.stringify(event)}\n\n`;
+  for (const client of smartConnectClients) {
+    try { client.write(payload); } catch { /* client disconnected */ }
+  }
+}
+
+function validateSmartConnectEvent(body: unknown): { valid: boolean; errors: string[]; event: SmartConnectEvent | null } {
+  const errors: string[] = [];
+  if (typeof body !== "object" || body === null) {
+    return { valid: false, errors: ["Body must be a JSON object"], event: null };
+  }
+  const o = body as Record<string, unknown>;
+  for (const field of ["eventId", "eventName", "sourceId", "sourceName", "timestamp"]) {
+    if (!o[field]) errors.push(`Missing required field: "${field}"`);
+  }
+  if (o.timestamp && isNaN(new Date(o.timestamp as string).getTime())) {
+    errors.push(`"timestamp" must be a valid ISO-8601 date-time`);
+  }
+  if (errors.length > 0) return { valid: false, errors, event: null };
+  return {
+    valid: true,
+    errors: [],
+    event: { ...(o as unknown as SmartConnectEvent), _receivedAt: Date.now() },
+  };
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Digifort API base URL
 // ============================================
@@ -1075,6 +1121,94 @@ export async function registerRoutes(
     } catch (error) {
       upstreamError(res, error);
     }
+  });
+
+  // ============================================================
+  // SMART CONNECT — Event receiver + SSE stream
+  // ============================================================
+
+  // POST  /api/smart-connect/events
+  // Accepts a single DigifortSmartConnectEvent and pushes it to all SSE clients
+  app.post("/api/smart-connect/events", (req: ExpressRequest, res: ExpressResponse) => {
+    const { valid, errors, event } = validateSmartConnectEvent(req.body);
+    if (!valid || !event) {
+      res.status(400).json({ ok: false, errors });
+      return;
+    }
+    smartConnectEvents.unshift(event);
+    if (smartConnectEvents.length > MAX_STORED_EVENTS) smartConnectEvents.length = MAX_STORED_EVENTS;
+    broadcastSmartConnectEvent(event);
+    console.log(`[SMART-CONNECT] Received event: ${event.eventId} — ${event.eventName} from ${event.sourceName}`);
+    res.json({ ok: true, eventId: event.eventId });
+  });
+
+  // POST  /api/smart-connect/events/batch
+  // Accepts an array of DigifortSmartConnectEvent objects
+  app.post("/api/smart-connect/events/batch", (req: ExpressRequest, res: ExpressResponse) => {
+    const body = req.body;
+    if (!Array.isArray(body)) {
+      res.status(400).json({ ok: false, errors: ["Body must be a JSON array"] });
+      return;
+    }
+    const results: Array<{ eventId?: string; ok: boolean; errors?: string[] }> = [];
+    for (const item of body) {
+      const { valid, errors, event } = validateSmartConnectEvent(item);
+      if (valid && event) {
+        smartConnectEvents.unshift(event);
+        broadcastSmartConnectEvent(event);
+        results.push({ eventId: event.eventId, ok: true });
+      } else {
+        results.push({ ok: false, errors });
+      }
+    }
+    if (smartConnectEvents.length > MAX_STORED_EVENTS) smartConnectEvents.length = MAX_STORED_EVENTS;
+    console.log(`[SMART-CONNECT] Batch received: ${results.filter(r => r.ok).length}/${body.length} valid events`);
+    res.json({ ok: true, results });
+  });
+
+  // GET   /api/smart-connect/events
+  // Returns all stored events (newest first), optional ?limit=N
+  app.get("/api/smart-connect/events", (req: ExpressRequest, res: ExpressResponse) => {
+    const limit = parseInt(req.query.limit as string) || 200;
+    res.json(smartConnectEvents.slice(0, limit));
+  });
+
+  // DELETE /api/smart-connect/events
+  // Clears all stored events
+  app.delete("/api/smart-connect/events", (_req: ExpressRequest, res: ExpressResponse) => {
+    smartConnectEvents.length = 0;
+    console.log("[SMART-CONNECT] Event store cleared");
+    res.json({ ok: true });
+  });
+
+  // GET   /api/smart-connect/events/stream
+  // Server-Sent Events stream — pushes new events in real time
+  app.get("/api/smart-connect/events/stream", (req: ExpressRequest, res: ExpressResponse) => {
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    // Send existing events on connect so the client can hydrate immediately
+    for (const event of [...smartConnectEvents].reverse()) {
+      res.write(`data: ${JSON.stringify(event)}\n\n`);
+    }
+
+    // Keep-alive ping every 30 s
+    const pingInterval = setInterval(() => {
+      try { res.write(": ping\n\n"); } catch { /* disconnected */ }
+    }, 30_000);
+
+    smartConnectClients.push(res);
+    console.log(`[SMART-CONNECT] SSE client connected (total: ${smartConnectClients.length})`);
+
+    req.on("close", () => {
+      clearInterval(pingInterval);
+      const idx = smartConnectClients.indexOf(res);
+      if (idx !== -1) smartConnectClients.splice(idx, 1);
+      console.log(`[SMART-CONNECT] SSE client disconnected (total: ${smartConnectClients.length})`);
+    });
   });
 
   return httpServer;
