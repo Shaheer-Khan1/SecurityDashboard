@@ -9,6 +9,7 @@ import { SystemStatusCard } from "@/components/dashboard/system-status";
 import { RecentEvents } from "@/components/dashboard/recent-events";
 import { AnalyticsChart } from "@/components/analytics/analytics-chart";
 import { CameraGrid } from "@/components/cameras/camera-grid";
+import { DeviceMap } from "@/components/dashboard/device-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import type { DashboardStats, SystemStatus, AnalyticsEvent, Camera as CameraType } from "@shared/schema";
@@ -115,6 +116,23 @@ export default function Dashboard() {
           <StatCard title="Recording" value={displayStats.recordingCameras} icon={Video} variant="success" />
           <StatCard title="Critical Events" value={displayStats.criticalEvents} icon={AlertTriangle} description="Last 24 hours" variant="danger" />
         </div>
+      </section>
+
+      {/* ── DEVICE MAP ────────────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <Network className="h-4 w-4" /> Device Map
+        </h2>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium text-muted-foreground">
+              Live device geolocation (demo IoT + Digifort cameras)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <DeviceMap cameras={cameras} />
+          </CardContent>
+        </Card>
       </section>
 
       {/* ── SYSTEM STATUS + CHART ────────────────────────────── */}

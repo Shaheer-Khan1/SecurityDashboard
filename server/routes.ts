@@ -26,6 +26,7 @@ interface SmartConnectEvent {
   sourceId: string;
   sourceType?: string;
   sourceName: string;
+  isAlarm?: boolean;
   timestamp: string;
   metadata?: Record<string, unknown>;
   _receivedAt: number;
@@ -48,9 +49,82 @@ function validateSmartConnectEvent(body: unknown): { valid: boolean; errors: str
     return { valid: false, errors: ["Body must be a JSON object"], event: null };
   }
   const o = body as Record<string, unknown>;
+
+  const allowedTopLevelFields = new Set([
+    "eventId",
+    "eventCode",
+    "eventName",
+    "sourceId",
+    "sourceType",
+    "sourceName",
+    "isAlarm",
+    "timestamp",
+    "metadata",
+  ]);
+
+  for (const key of Object.keys(o)) {
+    if (!allowedTopLevelFields.has(key)) {
+      errors.push(`Unexpected field: "${key}"`);
+    }
+  }
+
   for (const field of ["eventId", "eventName", "sourceId", "sourceName", "timestamp"]) {
     if (!o[field]) errors.push(`Missing required field: "${field}"`);
   }
+
+  if (o.eventId !== undefined && typeof o.eventId !== "string") {
+    errors.push(`"eventId" must be a string`);
+  }
+  if (o.eventCode !== undefined && typeof o.eventCode !== "string") {
+    errors.push(`"eventCode" must be a string`);
+  }
+  if (o.eventName !== undefined && typeof o.eventName !== "string") {
+    errors.push(`"eventName" must be a string`);
+  }
+  if (o.sourceId !== undefined && typeof o.sourceId !== "string") {
+    errors.push(`"sourceId" must be a string`);
+  }
+  if (o.sourceType !== undefined && typeof o.sourceType !== "string") {
+    errors.push(`"sourceType" must be a string`);
+  }
+  if (o.sourceName !== undefined && typeof o.sourceName !== "string") {
+    errors.push(`"sourceName" must be a string`);
+  }
+  if (o.isAlarm !== undefined && typeof o.isAlarm !== "boolean") {
+    errors.push(`"isAlarm" must be a boolean`);
+  }
+  if (o.metadata !== undefined && (typeof o.metadata !== "object" || o.metadata === null || Array.isArray(o.metadata))) {
+    errors.push(`"metadata" must be an object`);
+  }
+
+  const isValidMetadataValue = (value: unknown): boolean => {
+    if (
+      typeof value === "string" ||
+      typeof value === "number" ||
+      typeof value === "boolean"
+    ) {
+      return true;
+    }
+    if (Array.isArray(value)) {
+      return value.every(
+        (item) =>
+          typeof item === "string" ||
+          typeof item === "number" ||
+          typeof item === "boolean" ||
+          (typeof item === "object" && item !== null && !Array.isArray(item))
+      );
+    }
+    return typeof value === "object" && value !== null && !Array.isArray(value);
+  };
+
+  if (o.metadata && typeof o.metadata === "object" && !Array.isArray(o.metadata)) {
+    for (const [key, value] of Object.entries(o.metadata as Record<string, unknown>)) {
+      if (!isValidMetadataValue(value)) {
+        errors.push(`"metadata.${key}" has an unsupported value type`);
+      }
+    }
+  }
+
   if (o.timestamp && isNaN(new Date(o.timestamp as string).getTime())) {
     errors.push(`"timestamp" must be a valid ISO-8601 date-time`);
   }

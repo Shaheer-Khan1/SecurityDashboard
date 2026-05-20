@@ -1,7 +1,7 @@
 frontend
 
 backend
-PS C:\Users\shahe\OneDrive\Desktop\Security-Dashboard\server> $env:HOST="127.0.0.1"; $env:PORT="5000"; $env:DIGIFORT_API_URL="https://5.30.189.119:9600"; $env:DIGIFORT_USERNAME="admin"; $env:DIGIFORT_PASSWORD="admin"; $env:NODE_TLS_REJECT_UNAUTHORIZED="0"; npx tsx index.ts
+PS C:\Users\shahe\OneDrive\Desktop\Security-Dashboard\server> $env:HOST="127.0.0.1"; $env:PORT="5000"; $env:DIGIFORT_API_URL="http://5.30.189.119:9600"; $env:DIGIFORT_USERNAME="admin"; $env:DIGIFORT_PASSWORD="admin"; npx tsx index.ts
 
 python
 python main.py
