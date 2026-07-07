@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AnalyticsChart } from "@/components/analytics/analytics-chart";
+import { AlarmCharts } from "@/components/analytics/alarm-charts";
 import { CounterCard } from "@/components/analytics/counter-card";
 import {
   Activity, RefreshCcw, TrendingUp, Users, Car, AlertTriangle,
@@ -66,7 +67,7 @@ export default function AnalyticsPage() {
         <div>
           <h1 className="text-2xl font-semibold">Analytics</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Video analytics configurations, counters, and live insights from Digifort
+            Video analytics configurations, counters, and live insights
           </p>
         </div>
         <Button variant="outline" onClick={handleRefresh} data-testid="button-refresh-analytics">
@@ -147,6 +148,7 @@ export default function AnalyticsPage() {
         <TabsList>
           <TabsTrigger value="status">Status</TabsTrigger>
           <TabsTrigger value="overview" data-testid="tab-overview">Charts</TabsTrigger>
+          <TabsTrigger value="alarms" data-testid="tab-alarms">Alarms</TabsTrigger>
           <TabsTrigger value="counters" data-testid="tab-counters">Counters</TabsTrigger>
           <TabsTrigger value="configurations" data-testid="tab-configurations">Configurations</TabsTrigger>
           <TabsTrigger value="events">Events</TabsTrigger>
@@ -215,6 +217,11 @@ export default function AnalyticsPage() {
               type="line"
             />
           </div>
+        </TabsContent>
+
+        {/* ALARMS TAB — regional pie charts with drill-down */}
+        <TabsContent value="alarms" className="space-y-4">
+          <AlarmCharts />
         </TabsContent>
 
         {/* COUNTERS TAB */}

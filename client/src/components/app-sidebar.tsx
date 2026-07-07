@@ -8,9 +8,6 @@ import {
   Bookmark,
   Settings,
   Bell,
-  ShoppingBag,
-  Shield,
-  GraduationCap,
   Building,
   Zap,
 } from "lucide-react";
@@ -77,18 +74,6 @@ export function AppSidebar() {
       icon: Activity,
     },
     {
-      title: "Shopping Mall",
-      url: "/shopping-mall",
-      icon: ShoppingBag,
-      badge: "LIVE",
-    },
-    {
-      title: "High School",
-      url: "/high-school",
-      icon: GraduationCap,
-      badge: "NEW",
-    },
-    {
       title: "Moscow University",
       url: "/moscow-university",
       icon: Building,
@@ -112,13 +97,11 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-primary">
-            <Shield className="h-6 w-6 text-primary-foreground" />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-semibold">Security</span>
-            <span className="text-xs text-muted-foreground">Dashboard</span>
-          </div>
+          <img
+            src="/Digifort.png"
+            alt="Digifort"
+            className="h-9 w-auto max-w-[140px] object-contain object-left"
+          />
         </div>
       </SidebarHeader>
       <SidebarContent>

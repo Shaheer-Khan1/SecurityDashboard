@@ -48,7 +48,7 @@ export default function SettingsPage() {
       <div>
         <h1 className="text-2xl font-semibold">Settings</h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Configure your security dashboard preferences
+          Configure your Digifort preferences
         </p>
       </div>
 

@@ -67,9 +67,7 @@ function App() {
                 <header className="flex items-center justify-between gap-4 h-14 px-4 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 sticky top-0 z-50">
                   <div className="flex items-center gap-2">
                     <SidebarTrigger data-testid="button-sidebar-toggle" />
-                    <span className="text-sm font-medium text-muted-foreground hidden md:block">
-                      Security Monitoring System
-                    </span>
+                    <img src="/Digifort.png" alt="Digifort" className="h-6 w-auto object-contain hidden md:block" />
                   </div>
                   <div className="flex items-center gap-2">
                     <DropdownMenu>
@@ -115,7 +113,7 @@ function App() {
                       <DropdownMenuContent align="end">
                         <div className="px-4 py-2">
                           <p className="font-medium text-sm">Admin User</p>
-                          <p className="text-xs text-muted-foreground">admin@security.local</p>
+                          <p className="text-xs text-muted-foreground">admin@digifort.com</p>
                         </div>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem>Profile Settings</DropdownMenuItem>

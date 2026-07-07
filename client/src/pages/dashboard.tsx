@@ -8,6 +8,7 @@ import { StatCard } from "@/components/dashboard/stat-card";
 import { SystemStatusCard } from "@/components/dashboard/system-status";
 import { RecentEvents } from "@/components/dashboard/recent-events";
 import { AnalyticsChart } from "@/components/analytics/analytics-chart";
+import { AlarmCharts } from "@/components/analytics/alarm-charts";
 import { CameraGrid } from "@/components/cameras/camera-grid";
 import { DeviceMap } from "@/components/dashboard/device-map";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,7 +42,7 @@ export default function Dashboard() {
     <div className="space-y-6 p-6">
       <div>
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <p className="text-muted-foreground text-sm mt-1">Security monitoring overview — live data from Digifort</p>
+        <p className="text-muted-foreground text-sm mt-1">Digifort monitoring overview — live security data</p>
       </div>
 
       {/* ── CAMERAS ─────────────────────────────────────────── */}
@@ -332,6 +333,14 @@ export default function Dashboard() {
             </CardContent>
           </Card>
         </div>
+      </section>
+
+      {/* ── ALARM ANALYTICS ──────────────────────────────────── */}
+      <section>
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" /> Alarm Analytics
+        </h2>
+        <AlarmCharts />
       </section>
 
       {/* ── EVENTS ───────────────────────────────────────────── */}

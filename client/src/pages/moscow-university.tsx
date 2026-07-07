@@ -7,89 +7,28 @@ import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader.js";
 import type { Camera as CameraType } from "@shared/schema";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Video, X, Building2 } from "lucide-react";
+import { Video, X, Building2, Radio, Lock, Flame } from "lucide-react";
+import {
+  buildCameraPositions,
+  buildDemoIoTPositions,
+  inferIotType,
+  iotColor,
+  iotEmoji,
+  isAccessIoT,
+  isOccupancyIoT,
+  isSensorIoT,
+  randomModelPosition,
+  type ModelPosition,
+} from "@/lib/moscow-model-layout";
+import {
+  collectModelMeshes,
+  createCctvMarkerGroup,
+  drawCctvIcon2d,
+  snapPositionToModel,
+} from "@/lib/moscow-model-markers";
 
-// Moscow State University Camera Mapping - Adjusted to match building structure
-const UNIVERSITY_CAMERA_MAP: Record<string, { x: number; y: number; z: number; angle: number; location: string }> = {
-  // Main Building Entrance (front, at ground level)
-  "CAM-MSU-MAIN-ENTRANCE-01": { x: 0, y: 2, z: -45, angle: Math.PI, location: "Main Entrance Center" },
-  "CAM-MSU-MAIN-ENTRANCE-02": { x: -15, y: 2, z: -45, angle: Math.PI, location: "Main Entrance Left" },
-  "CAM-MSU-MAIN-ENTRANCE-03": { x: 15, y: 2, z: -45, angle: Math.PI, location: "Main Entrance Right" },
-  
-  // Central Tower (at various heights along the tower)
-  "CAM-MSU-TOWER-BASE-01": { x: 0, y: 5, z: 0, angle: 0, location: "Tower Base North" },
-  "CAM-MSU-TOWER-BASE-02": { x: 0, y: 5, z: 10, angle: Math.PI, location: "Tower Base South" },
-  "CAM-MSU-TOWER-MID-01": { x: -3, y: 30, z: 0, angle: Math.PI / 2, location: "Tower Mid-Level West" },
-  "CAM-MSU-TOWER-MID-02": { x: 3, y: 30, z: 0, angle: -Math.PI / 2, location: "Tower Mid-Level East" },
-  "CAM-MSU-TOWER-TOP-01": { x: 0, y: 60, z: -2, angle: Math.PI, location: "Tower Top North" },
-  "CAM-MSU-TOWER-TOP-02": { x: 0, y: 60, z: 2, angle: 0, location: "Tower Top South" },
-  
-  // West Wing (along the west side of building)
-  "CAM-MSU-WEST-WING-ENTRANCE": { x: -30, y: 2, z: -30, angle: Math.PI / 2, location: "West Wing Entrance" },
-  "CAM-MSU-WEST-WING-CORRIDOR-01": { x: -40, y: 2, z: -20, angle: Math.PI / 2, location: "West Corridor 1" },
-  "CAM-MSU-WEST-WING-CORRIDOR-02": { x: -40, y: 2, z: 0, angle: Math.PI / 2, location: "West Corridor 2" },
-  "CAM-MSU-WEST-WING-CORRIDOR-03": { x: -40, y: 2, z: 20, angle: Math.PI / 2, location: "West Corridor 3" },
-  "CAM-MSU-WEST-WING-ROOF": { x: -35, y: 15, z: 0, angle: Math.PI / 2, location: "West Wing Roof" },
-  
-  // East Wing (along the east side of building)
-  "CAM-MSU-EAST-WING-ENTRANCE": { x: 30, y: 2, z: -30, angle: -Math.PI / 2, location: "East Wing Entrance" },
-  "CAM-MSU-EAST-WING-CORRIDOR-01": { x: 40, y: 2, z: -20, angle: -Math.PI / 2, location: "East Corridor 1" },
-  "CAM-MSU-EAST-WING-CORRIDOR-02": { x: 40, y: 2, z: 0, angle: -Math.PI / 2, location: "East Corridor 2" },
-  "CAM-MSU-EAST-WING-CORRIDOR-03": { x: 40, y: 2, z: 20, angle: -Math.PI / 2, location: "East Corridor 3" },
-  "CAM-MSU-EAST-WING-ROOF": { x: 35, y: 15, z: 0, angle: -Math.PI / 2, location: "East Wing Roof" },
-  
-  // Academic Buildings (near front wings)
-  "CAM-MSU-LIBRARY-ENTRANCE": { x: -25, y: 2, z: -35, angle: Math.PI / 4, location: "Library Entrance" },
-  "CAM-MSU-LIBRARY-READING-HALL": { x: -30, y: 2, z: -40, angle: Math.PI / 4, location: "Library Reading Hall" },
-  "CAM-MSU-AUDITORIUM-MAIN": { x: 25, y: 2, z: -35, angle: -Math.PI / 4, location: "Main Auditorium" },
-  "CAM-MSU-AUDITORIUM-BALCONY": { x: 25, y: 8, z: -35, angle: -Math.PI / 4, location: "Auditorium Balcony" },
-  
-  // Student Areas (rear of building)
-  "CAM-MSU-CAFETERIA-MAIN": { x: -20, y: 2, z: 35, angle: Math.PI / 2, location: "Main Cafeteria" },
-  "CAM-MSU-CAFETERIA-SEATING": { x: -25, y: 2, z: 40, angle: Math.PI / 4, location: "Cafeteria Seating" },
-  "CAM-MSU-STUDENT-CENTER": { x: 20, y: 2, z: 35, angle: -Math.PI / 2, location: "Student Center" },
-  "CAM-MSU-RECREATION-AREA": { x: 25, y: 2, z: 40, angle: -Math.PI / 4, location: "Recreation Area" },
-  
-  // Laboratories (side wings)
-  "CAM-MSU-LAB-BUILDING-A": { x: -50, y: 2, z: -10, angle: Math.PI / 2, location: "Laboratory Building A" },
-  "CAM-MSU-LAB-BUILDING-B": { x: -50, y: 2, z: 10, angle: Math.PI / 2, location: "Laboratory Building B" },
-  "CAM-MSU-LAB-CORRIDOR": { x: -45, y: 2, z: 0, angle: Math.PI / 2, location: "Lab Corridor" },
-  
-  // Administrative
-  "CAM-MSU-ADMIN-ENTRANCE": { x: -10, y: 2, z: -42, angle: Math.PI / 4, location: "Administration Entrance" },
-  "CAM-MSU-ADMIN-OFFICE": { x: -15, y: 2, z: -38, angle: Math.PI / 4, location: "Administration Office" },
-  "CAM-MSU-RECTOR-OFFICE": { x: 0, y: 50, z: 0, angle: 0, location: "Rector's Office" },
-  
-  // Perimeter & Security (around the building at ground level)
-  "CAM-MSU-NORTH-GATE": { x: 0, y: 2, z: -55, angle: Math.PI, location: "North Gate" },
-  "CAM-MSU-SOUTH-GATE": { x: 0, y: 2, z: 55, angle: 0, location: "South Gate" },
-  "CAM-MSU-WEST-GATE": { x: -55, y: 2, z: 0, angle: Math.PI / 2, location: "West Gate" },
-  "CAM-MSU-EAST-GATE": { x: 55, y: 2, z: 0, angle: -Math.PI / 2, location: "East Gate" },
-  
-  // Parking & Exterior (outside the building perimeter)
-  "CAM-MSU-PARKING-NORTH-01": { x: -35, y: 5, z: -60, angle: Math.PI / 4, location: "North Parking Lot 1" },
-  "CAM-MSU-PARKING-NORTH-02": { x: 35, y: 5, z: -60, angle: -Math.PI / 4, location: "North Parking Lot 2" },
-  "CAM-MSU-PARKING-SOUTH-01": { x: -35, y: 5, z: 60, angle: Math.PI * 0.75, location: "South Parking Lot 1" },
-  "CAM-MSU-PARKING-SOUTH-02": { x: 35, y: 5, z: 60, angle: -Math.PI * 0.75, location: "South Parking Lot 2" },
-  
-  // Garden & Plaza (in front of building)
-  "CAM-MSU-PLAZA-CENTER": { x: 0, y: 2, z: -50, angle: Math.PI, location: "Central Plaza" },
-  "CAM-MSU-GARDEN-WEST": { x: -30, y: 2, z: -20, angle: Math.PI / 2, location: "West Garden" },
-  "CAM-MSU-GARDEN-EAST": { x: 30, y: 2, z: -20, angle: -Math.PI / 2, location: "East Garden" },
-  
-  // Emergency Points (at building corners)
-  "CAM-MSU-EMERGENCY-WEST-01": { x: -48, y: 2, z: -30, angle: Math.PI / 2, location: "West Emergency Exit 1" },
-  "CAM-MSU-EMERGENCY-WEST-02": { x: -48, y: 2, z: 30, angle: Math.PI / 2, location: "West Emergency Exit 2" },
-  "CAM-MSU-EMERGENCY-EAST-01": { x: 48, y: 2, z: -30, angle: -Math.PI / 2, location: "East Emergency Exit 1" },
-  "CAM-MSU-EMERGENCY-EAST-02": { x: 48, y: 2, z: 30, angle: -Math.PI / 2, location: "East Emergency Exit 2" },
-};
-
-function mapCameraToPosition(camera: CameraType) {
-  const mapped = UNIVERSITY_CAMERA_MAP[camera.name];
-  if (mapped) {
-    return { ...mapped, name: camera.name };
-  }
-  return { name: camera.name, x: 0, y: 5, z: 0, angle: 0, location: "Unmapped" };
+interface IoDevicesResponse {
+  devices: Array<{ name: string; model?: string; active?: boolean }>;
 }
 
 export default function MoscowUniversityPage() {
@@ -100,6 +39,9 @@ export default function MoscowUniversityPage() {
   const [modelLoaded, setModelLoaded] = useState(false);
   const [viewMode, setViewMode] = useState<'3d' | 'interior'>('3d');
   const [activeFloor, setActiveFloor] = useState<'ground' | 'tower'>('ground');
+  const [surfacePositions, setSurfacePositions] = useState<ModelPosition[]>([]);
+  const [surfaceIot, setSurfaceIot] = useState<ModelPosition[]>([]);
+  const modelMeshesRef = useRef<THREE.Mesh[]>([]);
   const [layersVisible, setLayersVisible] = useState({
     cameras: true,
     accessControl: true,
@@ -111,20 +53,34 @@ export default function MoscowUniversityPage() {
     queryKey: ["/api/cameras"],
   });
 
+  const { data: ioDevicesData } = useQuery<IoDevicesResponse>({
+    queryKey: ["/api/io-devices"],
+  });
+
   const positions = useMemo(
-    () => {
-      console.log('Total cameras:', cameras.length);
-      console.log('MSU cameras:', cameras.filter(cam => cam.name.startsWith("CAM-MSU-")).length);
-      return cameras
-        .filter(cam => cam.name.startsWith("CAM-MSU-"))
-        .map((cam) => mapCameraToPosition(cam));
-    },
-    [cameras]
+    () => buildCameraPositions(cameras.map((cam) => cam.name)),
+    [cameras],
   );
 
+  const iotPositions = useMemo(() => {
+    const demo = buildDemoIoTPositions();
+    const fromApi = (ioDevicesData?.devices ?? []).slice(0, 5).map((device) =>
+      randomModelPosition(
+        device.name,
+        device.name,
+        "iot",
+        inferIotType(device.name, device.model),
+      ),
+    );
+    return [...demo, ...fromApi];
+  }, [ioDevicesData]);
+
+  const displayPositions = surfacePositions.length > 0 ? surfacePositions : positions;
+  const displayIot = surfaceIot.length > 0 ? surfaceIot : iotPositions;
+
   const activeCamera = useMemo(
-    () => positions.find(p => p.name === activeCam),
-    [positions, activeCam]
+    () => displayPositions.find(p => p.name === activeCam),
+    [displayPositions, activeCam]
   );
 
   useEffect(() => {
@@ -183,8 +139,109 @@ export default function MoscowUniversityPage() {
     ground.receiveShadow = true;
     scene.add(ground);
 
+    // Device marker groups (populated after model surface snap)
+    const cameraGroup = new THREE.Group();
+    scene.add(cameraGroup);
+
+    const iotGroup = new THREE.Group();
+    scene.add(iotGroup);
+
+    const fovMaterials: Record<string, THREE.MeshStandardMaterial> = {};
+    const surfaceRaycaster = new THREE.Raycaster();
+
+    const resetFovs = () => {
+      Object.values(fovMaterials).forEach(mat => {
+        mat.color.set("#60a5fa");
+        mat.opacity = 0.08;
+      });
+    };
+
+    const populateMarkers = (meshes: THREE.Mesh[]) => {
+      modelMeshesRef.current = meshes;
+
+      while (cameraGroup.children.length > 0) {
+        cameraGroup.remove(cameraGroup.children[0]);
+      }
+      while (iotGroup.children.length > 0) {
+        iotGroup.remove(iotGroup.children[0]);
+      }
+      for (const key of Object.keys(fovMaterials)) {
+        delete fovMaterials[key];
+      }
+
+      const snappedCameras = positions.map((p) =>
+        snapPositionToModel(p, meshes, surfaceRaycaster),
+      );
+      const snappedIot = iotPositions.map((p) =>
+        snapPositionToModel(p, meshes, surfaceRaycaster),
+      );
+      setSurfacePositions(snappedCameras);
+      setSurfaceIot(snappedIot);
+
+      cameraGroup.visible = layersVisible.cameras;
+
+      snappedCameras.forEach((pos) => {
+        const cctv = createCctvMarkerGroup(false);
+        cctv.position.set(pos.x, pos.y, pos.z);
+        cctv.rotation.y = pos.angle;
+        const userData = { name: pos.name, type: "camera" as const };
+        cctv.userData = userData;
+        cctv.traverse((child) => {
+          child.userData = userData;
+        });
+        cameraGroup.add(cctv);
+
+        const fovGeom = new THREE.ConeGeometry(4.5, 9, 24, 1, true);
+        const fovMat = new THREE.MeshStandardMaterial({
+          color: "#60a5fa",
+          opacity: 0.1,
+          transparent: true,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        fovMaterials[pos.name] = fovMat;
+        const fov = new THREE.Mesh(fovGeom, fovMat);
+        fov.position.set(pos.x, pos.y + 0.4, pos.z);
+        fov.rotation.x = -Math.PI / 2;
+        fov.rotation.y = pos.angle;
+        fov.userData = userData;
+        cameraGroup.add(fov);
+      });
+
+      snappedIot.forEach((device) => {
+        const showAccess = layersVisible.accessControl && isAccessIoT(device);
+        const showSensor = layersVisible.sensors && isSensorIoT(device);
+        const showOccupancy = layersVisible.occupancy && isOccupancyIoT(device);
+        if (!showAccess && !showSensor && !showOccupancy) return;
+
+        const color = iotColor(device.iotType!);
+        const markerGeo = new THREE.BoxGeometry(1.2, 0.8, 1.2);
+        const markerMat = new THREE.MeshStandardMaterial({
+          color,
+          emissive: color,
+          emissiveIntensity: 0.35,
+        });
+        const marker = new THREE.Mesh(markerGeo, markerMat);
+        marker.position.set(device.x, device.y, device.z);
+        marker.userData = { name: device.name, type: "iot", iotType: device.iotType };
+        iotGroup.add(marker);
+
+        const ringGeo = new THREE.RingGeometry(1.4, 1.8, 24);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.45,
+          side: THREE.DoubleSide,
+        });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.position.set(device.x, device.y + 0.05, device.z);
+        ring.rotation.x = -Math.PI / 2;
+        ring.userData = { name: device.name, type: "iot" };
+        iotGroup.add(ring);
+      });
+    };
+
     // Load Moscow State University model
-    // Set up Draco decoder for compressed models
     const dracoLoader = new DRACOLoader();
     dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.6/');
     
@@ -196,37 +253,22 @@ export default function MoscowUniversityPage() {
       (gltf) => {
         const model = gltf.scene;
         
-        console.log('Model loaded, bounding box:', model);
-        
-        // Calculate bounding box to understand model size
         const box = new THREE.Box3().setFromObject(model);
         const size = box.getSize(new THREE.Vector3());
         const center = box.getCenter(new THREE.Vector3());
         
-        console.log('Model size:', size);
-        console.log('Model center:', center);
-        
-        // Scale the model appropriately
-        // Adjust scale based on model size
         const maxDim = Math.max(size.x, size.y, size.z);
-        const targetSize = 200; // Target size for the model
+        const targetSize = 200;
         const scale = targetSize / maxDim;
         
         model.scale.set(scale, scale, scale);
-        
-        // Center the model
         model.position.set(-center.x * scale, 0, -center.z * scale);
         
-        console.log('Applied scale:', scale);
-        console.log('Applied position:', model.position);
-        
-        // Enable shadows
         model.traverse((node) => {
           if ((node as THREE.Mesh).isMesh) {
             node.castShadow = true;
             node.receiveShadow = true;
             
-            // Make sure materials are visible
             const mesh = node as THREE.Mesh;
             if (mesh.material) {
               if (Array.isArray(mesh.material)) {
@@ -242,74 +284,17 @@ export default function MoscowUniversityPage() {
         
         scene.add(model);
         setModelLoaded(true);
-        console.log('Moscow State University model loaded successfully and added to scene');
+        populateMarkers(collectModelMeshes(model));
       },
-      (progress) => {
-        const percent = (progress.loaded / progress.total * 100).toFixed(2);
-        console.log('Loading Moscow State University:', percent + '%');
-      },
+      undefined,
       (error) => {
         console.error('Error loading university model:', error);
-        setModelLoaded(true); // Set to true anyway so cameras are visible
+        setModelLoaded(true);
+        populateMarkers([]);
       }
     );
 
-    // Camera markers
-    const cameraGroup = new THREE.Group();
-    scene.add(cameraGroup);
-
-    const fovMaterials: Record<string, THREE.MeshStandardMaterial> = {};
-
-    const resetFovs = () => {
-      Object.values(fovMaterials).forEach(mat => {
-        mat.color.set("#60a5fa");
-        mat.opacity = 0.08;
-      });
-    };
-
-    positions.forEach(pos => {
-      // Camera marker - smaller and more realistic
-      const markerGeo = new THREE.SphereGeometry(0.8, 16, 16);
-      const markerMat = new THREE.MeshStandardMaterial({ 
-        color: "#60a5fa",
-        emissive: "#60a5fa",
-        emissiveIntensity: 0.5,
-      });
-      const marker = new THREE.Mesh(markerGeo, markerMat);
-      marker.position.set(pos.x, pos.y, pos.z);
-      marker.userData = { name: pos.name, type: "camera" };
-      cameraGroup.add(marker);
-
-      // FOV Cone - adjusted size
-      const fovGeom = new THREE.ConeGeometry(5, 10, 24, 1, true);
-      const fovMat = new THREE.MeshStandardMaterial({
-        color: '#60a5fa',
-        opacity: 0.08,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-      });
-      fovMaterials[pos.name] = fovMat;
-      const fov = new THREE.Mesh(fovGeom, fovMat);
-      fov.position.set(pos.x, pos.y, pos.z);
-      fov.rotation.x = -Math.PI / 2;
-      fov.rotation.y = pos.angle;
-      fov.userData = { name: pos.name, type: "fov" };
-      cameraGroup.add(fov);
-
-      // Direction indicator - smaller arrow
-      const arrowGeo = new THREE.CylinderGeometry(0.15, 0.15, 2, 8);
-      const arrowMat = new THREE.MeshStandardMaterial({ color: "#60a5fa" });
-      const arrow = new THREE.Mesh(arrowGeo, arrowMat);
-      arrow.position.set(
-        pos.x + Math.sin(pos.angle) * 2,
-        pos.y,
-        pos.z + Math.cos(pos.angle) * 2
-      );
-      arrow.rotation.x = Math.PI / 2;
-      arrow.rotation.z = -pos.angle;
-      cameraGroup.add(arrow);
-    });
+    populateMarkers([]);
 
     const highlightCamera = (name: string) => {
       resetFovs();
@@ -330,10 +315,13 @@ export default function MoscowUniversityPage() {
       pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
       raycaster.setFromCamera(pointer, camera);
-      const intersects = raycaster.intersectObjects(cameraGroup.children, true);
+      const intersects = raycaster.intersectObjects(
+        [...cameraGroup.children, ...iotGroup.children],
+        true,
+      );
       if (intersects.length > 0) {
-        const name = intersects[0].object.userData?.name;
-        if (name) highlightCamera(name);
+        const hit = intersects[0].object.userData;
+        if (hit?.type === "camera" && hit.name) highlightCamera(hit.name);
       }
     };
     renderer.domElement.addEventListener("click", onClick);
@@ -366,7 +354,7 @@ export default function MoscowUniversityPage() {
       scene.clear();
       mount.innerHTML = "";
     };
-  }, [positions, viewMode]);
+  }, [positions, iotPositions, viewMode, layersVisible]);
 
   // Interior Floor Plan Rendering
   useEffect(() => {
@@ -459,122 +447,85 @@ export default function MoscowUniversityPage() {
 
     // Draw cameras
     if (layersVisible.cameras) {
-      const floorCameras = positions.filter(cam => 
+      const floorCameras = displayPositions.filter(cam => 
         activeFloor === 'ground' 
-          ? cam.y <= 10
-          : cam.y > 10
+          ? cam.y <= 12
+          : cam.y > 12
       );
 
       floorCameras.forEach(cam => {
         const x = cam.x * scale;
         const z = -cam.z * scale;
 
-        // FOV cone
-        ctx.fillStyle = activeCam === cam.name ? '#22d3ee40' : '#60a5fa20';
+        ctx.fillStyle = activeCam === cam.name ? '#22d3ee30' : '#60a5fa18';
         ctx.beginPath();
         ctx.moveTo(x, z);
-        ctx.arc(x, z, 25, cam.angle - Math.PI / 3, cam.angle + Math.PI / 3);
+        ctx.arc(x, z, 22, cam.angle - Math.PI / 3, cam.angle + Math.PI / 3);
         ctx.closePath();
         ctx.fill();
 
-        // Camera body
-        ctx.fillStyle = activeCam === cam.name ? '#22d3ee' : '#60a5fa';
-        ctx.beginPath();
-        ctx.arc(x, z, 6, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Direction
-        ctx.strokeStyle = activeCam === cam.name ? '#22d3ee' : '#60a5fa';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, z);
-        ctx.lineTo(x + Math.sin(cam.angle) * 12, z + Math.cos(cam.angle) * 12);
-        ctx.stroke();
+        drawCctvIcon2d(ctx, x, z, cam.angle, activeCam === cam.name);
 
         if (activeCam === cam.name) {
           ctx.fillStyle = '#22d3ee';
           ctx.font = 'bold 10px Inter, sans-serif';
           ctx.textAlign = 'center';
-          ctx.fillText(cam.name, x, z - 12);
+          ctx.fillText(cam.name, x, z - 14);
         }
       });
     }
 
     // Access control
     if (layersVisible.accessControl) {
-      const accessPoints = [
-        { x: 0, y: -60, label: 'North Gate' },
-        { x: 0, y: 60, label: 'South Gate' },
-        { x: -60, y: 0, label: 'West Gate' },
-        { x: 60, y: 0, label: 'East Gate' },
-      ];
-
-      accessPoints.forEach(point => {
+      displayIot.filter(isAccessIoT).forEach((point) => {
         const x = point.x * scale;
-        const z = -point.y * scale;
+        const z = -point.z * scale;
 
-        ctx.fillStyle = '#22c55e';
+        ctx.fillStyle = iotColor(point.iotType!);
         ctx.fillRect(x - 5, z - 5, 10, 10);
-        ctx.strokeStyle = '#16a34a';
+        ctx.strokeStyle = "#16a34a";
         ctx.lineWidth = 2;
         ctx.strokeRect(x - 5, z - 5, 10, 10);
 
-        ctx.fillStyle = '#fff';
-        ctx.font = 'bold 10px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('🔒', x, z + 3);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 10px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(iotEmoji(point.iotType!), x, z + 3);
       });
     }
 
-    // Sensors
+    // Sensors & gateways
     if (layersVisible.sensors) {
-      const sensors = [
-        { x: 0, y: -30, type: 'wifi' },
-        { x: -30, y: 0, type: 'fire' },
-        { x: 30, y: 0, type: 'fire' },
-        { x: 0, y: 30, type: 'wifi' },
-        { x: -40, y: -20, type: 'fire' },
-        { x: 40, y: -20, type: 'fire' },
-      ];
-
-      sensors.forEach(sensor => {
+      displayIot.filter(isSensorIoT).forEach((sensor) => {
         const x = sensor.x * scale;
-        const z = -sensor.y * scale;
+        const z = -sensor.z * scale;
 
-        if (sensor.type === 'wifi') {
-          ctx.fillStyle = '#3b82f6';
-          ctx.font = 'bold 14px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText('📶', x, z + 4);
-        } else if (sensor.type === 'fire') {
-          ctx.fillStyle = '#ef4444';
-          ctx.font = 'bold 14px Arial';
-          ctx.textAlign = 'center';
-          ctx.fillText('🔥', x, z + 4);
-        }
+        ctx.fillStyle = iotColor(sensor.iotType!);
+        ctx.font = "bold 14px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(iotEmoji(sensor.iotType!), x, z + 4);
       });
     }
 
     // Occupancy heatmap
     if (layersVisible.occupancy) {
-      const heatZones = [
-        { x: 0, y: -10, r: 20, intensity: 0.7 },
-        { x: -30, y: 30, r: 15, intensity: 0.6 },
-        { x: 30, y: 30, r: 15, intensity: 0.5 },
-      ];
-
-      heatZones.forEach(zone => {
+      displayIot.filter(isOccupancyIoT).forEach((zone) => {
         const gradient = ctx.createRadialGradient(
-          zone.x * scale, -zone.y * scale, 0,
-          zone.x * scale, -zone.y * scale, zone.r * scale
+          zone.x * scale, -zone.z * scale, 0,
+          zone.x * scale, -zone.z * scale, 20 * scale,
         );
-        gradient.addColorStop(0, `rgba(251, 191, 36, ${zone.intensity * 0.5})`);
-        gradient.addColorStop(1, 'rgba(251, 191, 36, 0)');
-        
+        gradient.addColorStop(0, "rgba(251, 191, 36, 0.45)");
+        gradient.addColorStop(1, "rgba(251, 191, 36, 0)");
+
         ctx.fillStyle = gradient;
         ctx.beginPath();
-        ctx.arc(zone.x * scale, -zone.y * scale, zone.r * scale, 0, Math.PI * 2);
+        ctx.arc(zone.x * scale, -zone.z * scale, 20 * scale, 0, Math.PI * 2);
         ctx.fill();
+
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(iotEmoji(zone.iotType!), zone.x * scale, -zone.z * scale + 4);
       });
     }
 
@@ -586,8 +537,8 @@ export default function MoscowUniversityPage() {
       const clickX = e.clientX - rect.left - centerX;
       const clickY = e.clientY - rect.top - centerY;
 
-      const floorCameras = positions.filter(cam => 
-        activeFloor === 'ground' ? cam.y <= 10 : cam.y > 10
+      const floorCameras = displayPositions.filter(cam => 
+        activeFloor === 'ground' ? cam.y <= 12 : cam.y > 12
       );
 
       for (const cam of floorCameras) {
@@ -608,7 +559,7 @@ export default function MoscowUniversityPage() {
     return () => {
       canvas.removeEventListener('click', handleClick);
     };
-  }, [viewMode, activeFloor, positions, layersVisible, activeCam]);
+  }, [viewMode, activeFloor, displayPositions, displayIot, layersVisible, activeCam]);
 
   return (
     <div className="p-6 space-y-4">
@@ -616,7 +567,7 @@ export default function MoscowUniversityPage() {
         <div>
           <h1 className="text-2xl font-semibold">Moscow State University - CCTV Security System</h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Iconic university campus with {positions.length} strategically placed cameras
+            {displayPositions.length} cameras and {displayIot.length} IoT devices on building surfaces
           </p>
         </div>
 
@@ -671,6 +622,72 @@ export default function MoscowUniversityPage() {
 
         {/* Sidebar */}
         <Card className="p-4 space-y-3">
+          {/* Layer Controls */}
+          <div className="space-y-2">
+            <h3 className="font-medium text-sm text-muted-foreground">Layers</h3>
+            <div className="space-y-2">
+              <button
+                onClick={() => setLayersVisible(prev => ({ ...prev, cameras: !prev.cameras }))}
+                className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Video className="h-4 w-4 text-blue-500" />
+                  <span className="text-sm">Cameras</span>
+                </div>
+                <div className={`text-xs font-medium px-2 py-0.5 rounded ${
+                  layersVisible.cameras ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {layersVisible.cameras ? 'ON' : 'OFF'}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setLayersVisible(prev => ({ ...prev, accessControl: !prev.accessControl }))}
+                className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Lock className="h-4 w-4 text-green-500" />
+                  <span className="text-sm">Access Control</span>
+                </div>
+                <div className={`text-xs font-medium px-2 py-0.5 rounded ${
+                  layersVisible.accessControl ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {layersVisible.accessControl ? 'ON' : 'OFF'}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setLayersVisible(prev => ({ ...prev, sensors: !prev.sensors }))}
+                className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Flame className="h-4 w-4 text-red-500" />
+                  <span className="text-sm">Sensors</span>
+                </div>
+                <div className={`text-xs font-medium px-2 py-0.5 rounded ${
+                  layersVisible.sensors ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {layersVisible.sensors ? 'ON' : 'OFF'}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setLayersVisible(prev => ({ ...prev, occupancy: !prev.occupancy }))}
+                className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
+              >
+                <div className="flex items-center gap-2">
+                  <Radio className="h-4 w-4 text-amber-500" />
+                  <span className="text-sm">Occupancy</span>
+                </div>
+                <div className={`text-xs font-medium px-2 py-0.5 rounded ${
+                  layersVisible.occupancy ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'
+                }`}>
+                  {layersVisible.occupancy ? 'ON' : 'OFF'}
+                </div>
+              </button>
+            </div>
+          </div>
+
           {viewMode === 'interior' && (
             <>
               {/* Floor Selector */}
@@ -696,84 +713,20 @@ export default function MoscowUniversityPage() {
                 </div>
               </div>
 
-              {/* Layer Controls */}
-              <div className="space-y-2">
-                <h3 className="font-medium text-sm text-muted-foreground">Layers</h3>
-                <div className="space-y-2">
-                  <button
-                    onClick={() => setLayersVisible(prev => ({ ...prev, cameras: !prev.cameras }))}
-                    className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Video className="h-4 w-4 text-blue-500" />
-                      <span className="text-sm">Cameras</span>
-                    </div>
-                    <div className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      layersVisible.cameras ? 'bg-blue-500 text-white' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {layersVisible.cameras ? 'ON' : 'OFF'}
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => setLayersVisible(prev => ({ ...prev, accessControl: !prev.accessControl }))}
-                    className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <X className="h-4 w-4 text-green-500" />
-                      <span className="text-sm">Access Control</span>
-                    </div>
-                    <div className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      layersVisible.accessControl ? 'bg-green-500 text-white' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {layersVisible.accessControl ? 'ON' : 'OFF'}
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => setLayersVisible(prev => ({ ...prev, sensors: !prev.sensors }))}
-                    className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <X className="h-4 w-4 text-red-500" />
-                      <span className="text-sm">Sensors</span>
-                    </div>
-                    <div className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      layersVisible.sensors ? 'bg-red-500 text-white' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {layersVisible.sensors ? 'ON' : 'OFF'}
-                    </div>
-                  </button>
-
-                  <button
-                    onClick={() => setLayersVisible(prev => ({ ...prev, occupancy: !prev.occupancy }))}
-                    className="w-full flex items-center justify-between p-2 rounded-md hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="flex items-center gap-2">
-                      <X className="h-4 w-4 text-amber-500" />
-                      <span className="text-sm">Occupancy</span>
-                    </div>
-                    <div className={`text-xs font-medium px-2 py-0.5 rounded ${
-                      layersVisible.occupancy ? 'bg-amber-500 text-white' : 'bg-muted text-muted-foreground'
-                    }`}>
-                      {layersVisible.occupancy ? 'ON' : 'OFF'}
-                    </div>
-                  </button>
-                </div>
-              </div>
-
               <div className="border-t pt-4" />
             </>
           )}
 
+          <div className="border-t pt-4" />
+
           {/* Camera List */}
-          <h3 className="font-medium text-sm">Cameras ({positions.length})</h3>
-          <div className="space-y-2 max-h-[650px] overflow-auto pr-1">
+          <h3 className="font-medium text-sm">Cameras ({displayPositions.length})</h3>
+          <div className="space-y-2 max-h-[280px] overflow-auto pr-1">
             {isLoading && <p className="text-sm text-muted-foreground">Loading cameras...</p>}
-            {!isLoading && positions.length === 0 && (
+            {!isLoading && displayPositions.length === 0 && (
               <p className="text-sm text-muted-foreground">No cameras available.</p>
             )}
-            {positions.map((cam) => (
+            {displayPositions.map((cam) => (
               <div
                 key={cam.name}
                 className={`flex items-center justify-between text-sm border rounded-md px-2 py-2 cursor-pointer transition-colors ${
@@ -799,6 +752,26 @@ export default function MoscowUniversityPage() {
                     activeCam === cam.name ? "bg-red-500 animate-pulse" : "bg-green-500"
                   }`}
                 />
+              </div>
+            ))}
+          </div>
+
+          <div className="border-t pt-4" />
+
+          <h3 className="font-medium text-sm">IoT Devices ({displayIot.length})</h3>
+          <div className="space-y-2 max-h-[220px] overflow-auto pr-1">
+            {displayIot.map((device) => (
+              <div
+                key={device.name}
+                className="flex items-center justify-between text-sm border rounded-md px-2 py-2 bg-card border-border"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium truncate text-xs">{device.location}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 capitalize">
+                    {device.iotType?.replace("_", " ")} sensor
+                  </p>
+                </div>
+                <span className="text-sm">{iotEmoji(device.iotType!)}</span>
               </div>
             ))}
           </div>

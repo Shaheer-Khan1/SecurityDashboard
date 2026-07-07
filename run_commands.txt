@@ -1,11 +1,19 @@
 frontend
+Open: http://127.0.0.1:5000  (or http://localhost:5000)
 
-backend
+python mock (terminal 1)
+cd mock_server
+python digifort_dummy_server.py --port 8089
+
+backend with python mock (terminal 2)
+cd C:\Users\shahe\OneDrive\Desktop\Security-Dashboard
+$env:HOST="127.0.0.1"; $env:PORT="5000"; $env:DIGIFORT_API_URL="http://127.0.0.1:8089"; $env:DIGIFORT_USERNAME="admin"; $env:DIGIFORT_PASSWORD=""; npx tsx server/index.ts
+
+backend (local Digifort — API is on port 8601, not 80)
+PS C:\Users\shahe\OneDrive\Desktop\Security-Dashboard\server> $env:HOST="127.0.0.1"; $env:PORT="5000"; $env:DIGIFORT_API_URL="http://127.0.0.1:8601"; $env:DIGIFORT_USERNAME="admin"; $env:DIGIFORT_PASSWORD=""; npx tsx index.ts
+
+backend (remote Digifort)
 PS C:\Users\shahe\OneDrive\Desktop\Security-Dashboard\server> $env:HOST="127.0.0.1"; $env:PORT="5000"; $env:DIGIFORT_API_URL="http://5.30.189.119:9600"; $env:DIGIFORT_USERNAME="admin"; $env:DIGIFORT_PASSWORD="admin"; npx tsx index.ts
 
-python
-python main.py
-
-
-
-
+Optional: split frontend (Vite only on 5173 — set API base)
+$env:VITE_API_BASE_URL="http://127.0.0.1:5000"; npm run dev:client

@@ -300,6 +300,87 @@ function extractDigifortData(responseData: any, dataKey?: string): any {
   return responseData;
 }
 
+/** Normalize Digifort AnalyticsRecord or frontend Event into a consistent alert shape. */
+function normalizeAlert(record: any): any {
+  const alarmStatus = (record.AlarmStatus ?? record.alarmStatus ?? "ACTIVE").toString().toUpperCase();
+  return {
+    id: String(record.RecordCode ?? record.id ?? ""),
+    recordCode: String(record.RecordCode ?? record.recordCode ?? ""),
+    camera: record.Camera ?? record.camera ?? "",
+    zone: record.Zone ?? record.zone,
+    eventType: record.EventType ?? record.eventType ?? "MOTION",
+    objectClass: (record.ObjectClass ?? record.objectClass ?? "").toString().toLowerCase(),
+    ruleName: record.RuleName ?? record.ruleName,
+    timestamp: record.StartDate ?? record.timestamp ?? "",
+    alarmStatus: alarmStatus === "ACTIVE" ? "active" : "closed",
+    region: record.Region ?? record.region ?? "Unknown",
+    site: record.Site ?? record.site ?? "Unknown",
+    severity: record.Severity ?? record.severity ?? "Medium",
+    description: record.Description ?? record.description ?? "",
+    isAlarm: true,
+  };
+}
+
+function extractAlerts(responseData: any): any[] {
+  const events = extractDigifortData(responseData, "Events");
+  if (Array.isArray(events) && events.length > 0) {
+    return events.map((e: any) => (e.region || e.alarmStatus ? e : normalizeAlert(e)));
+  }
+  const records = extractDigifortData(responseData, "AnalyticsRecords");
+  if (Array.isArray(records) && records.length > 0) {
+    return records.map(normalizeAlert);
+  }
+  return [];
+}
+
+function buildAlarmSummaryFromAlerts(alerts: any[]) {
+  const summary: Record<string, { active: number; closed: number; sites: Record<string, { active: number; closed: number }> }> = {};
+  for (const alert of alerts) {
+    const region = alert.region || "Unknown";
+    const site = alert.site || "Unknown";
+    const key = alert.alarmStatus === "active" ? "active" : "closed";
+    if (!summary[region]) summary[region] = { active: 0, closed: 0, sites: {} };
+    summary[region][key]++;
+    if (!summary[region].sites[site]) summary[region].sites[site] = { active: 0, closed: 0 };
+    summary[region].sites[site][key]++;
+  }
+  return transformAlarmSummary({ AlarmSummary: summary });
+}
+
+function transformAlarmSummary(raw: any) {
+  const summary = extractDigifortData(raw, "AlarmSummary") ?? raw?.AlarmSummary ?? raw ?? {};
+  const regions: any[] = [];
+  let totalActive = 0;
+  let totalClosed = 0;
+
+  for (const [name, data] of Object.entries(summary)) {
+    const d = data as { active?: number; closed?: number; sites?: Record<string, { active?: number; closed?: number }> };
+    const active = d.active ?? 0;
+    const closed = d.closed ?? 0;
+    totalActive += active;
+    totalClosed += closed;
+    regions.push({
+      name,
+      active,
+      closed,
+      total: active + closed,
+      sites: Object.entries(d.sites ?? {})
+        .map(([siteName, siteData]) => ({
+          name: siteName,
+          active: siteData.active ?? 0,
+          closed: siteData.closed ?? 0,
+          total: (siteData.active ?? 0) + (siteData.closed ?? 0),
+        }))
+        .sort((a, b) => b.active - a.active),
+    });
+  }
+
+  return {
+    totals: { active: totalActive, closed: totalClosed, total: totalActive + totalClosed },
+    regions: regions.sort((a, b) => b.active - a.active),
+  };
+}
+
 /**
  * Proxy request to Mock Server (or Digifort API if configured)
  * 
@@ -336,36 +417,37 @@ async function proxyRequest(
     // Add ResponseFormat=JSON to request JSON format explicitly
     const separator = endpoint.includes("?") ? "&" : "?";
     const endpointWithFormat = `${endpoint}${separator}ResponseFormat=JSON`;
-    
-    // Import auth functions
-    const { addAuthToUrl, getBasicAuthHeader } = await import("./auth");
-    
-    // Add authentication parameters to the endpoint URL (for Safe auth) or prepare Basic auth header
+
+    // Basic auth → Authorization header; Safe auth → AuthSession/AuthData query params
     const authenticatedUrl = await addAuthToUrl(`${DIGIFORT_API_URL}${endpointWithFormat}`);
     const basicAuthHeader = getBasicAuthHeader();
-    
+
     // Prepare headers
     const headers: Record<string, string> = {
       "Accept": "application/json",
-      "Content-Type": "application/json",
       ...options.headers as Record<string, string>,
     };
-    
-    // Add Basic HTTP Authentication header if using Basic auth
+    const method = (options.method || "GET").toUpperCase();
+    if (options.body !== undefined && options.body !== null && method !== "GET" && method !== "HEAD") {
+      headers["Content-Type"] = "application/json";
+    }
+
     if (basicAuthHeader) {
       headers["Authorization"] = basicAuthHeader;
     }
-    
+
     // Debug: Log URL for first few requests (mask sensitive data)
     if (proxyRequestLogCount < 3) {
-      const maskedUrl = authenticatedUrl.replace(/AuthData=[A-F0-9]+/i, 'AuthData=***');
+      const maskedUrl = authenticatedUrl
+        .replace(/AuthPass=[^&]+/i, "AuthPass=***")
+        .replace(/AuthData=[A-F0-9]+/i, "AuthData=***");
       console.log(`[PROXY] Request URL: ${maskedUrl}`);
       console.log(`[PROXY] Auth Method: ${process.env.DIGIFORT_AUTH_METHOD || "basic"}`);
       if (basicAuthHeader) {
         const maskedAuth = basicAuthHeader.substring(0, 15) + "***";
         console.log(`[PROXY] Authorization Header: ${maskedAuth}`);
       } else {
-        console.log(`[PROXY] ⚠️  No Authorization header!`);
+        console.log(`[PROXY] Auth Mode: Safe (AuthSession/AuthData query params)`);
       }
       proxyRequestLogCount++;
     }
@@ -383,7 +465,32 @@ async function proxyRequest(
       }
       throw fetchError;
     });
-    
+
+    // Fail fast on HTTP auth errors before trying to parse HTML login pages as JSON
+    if (response.status === 401 || response.status === 403) {
+      if (response.status === 401) {
+        console.error(`[PROXY] 401 Unauthorized for ${endpoint}`);
+        if (basicAuthHeader) {
+          console.error(`[PROXY] Basic auth header was sent but rejected by server.`);
+          console.error(`[PROXY] Verify DIGIFORT_USERNAME / DIGIFORT_PASSWORD are correct`);
+        } else {
+          console.error(`[PROXY] Safe auth session may be invalid — check credentials`);
+        }
+        throw new Error(`Authentication failed: 401 Unauthorized`);
+      }
+
+      if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
+        console.log(`[PROXY] Authentication failed (${response.status}) for ${endpoint}, retrying...`);
+        const { clearAuthSession } = await import("./auth");
+        await clearAuthSession();
+        await new Promise(resolve => setTimeout(resolve, 200));
+        return await proxyRequest(endpoint, options, retryCount + 1);
+      }
+
+      console.error(`[PROXY] Authentication failed for ${endpoint}: ${response.status}`);
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+    }
+
     // Parse response to check for authentication errors in response body
     const responseData = await parseDigifortResponse(response);
     
@@ -406,33 +513,6 @@ async function proxyRequest(
       } else {
         console.error(`[PROXY] Authentication failed for ${endpoint}`);
         return responseData;
-      }
-    }
-    
-    // Check HTTP status codes
-    if (response.status === 401 || response.status === 403) {
-      const errorText = await response.text();
-      
-      if (response.status === 401) {
-        console.error(`[PROXY] 401 Unauthorized for ${endpoint}`);
-        if (basicAuthHeader) {
-          console.error(`[PROXY] ⚠️  Basic auth header was sent but rejected by server.`);
-          console.error(`[PROXY]    Verify credentials are correct for Digifort server`);
-        } else {
-          console.error(`[PROXY] ⚠️  No Authorization header was sent!`);
-        }
-        throw new Error(`Authentication failed: 401 Unauthorized`);
-      }
-      
-      if (retryCount === 0 && process.env.DIGIFORT_AUTH_METHOD !== "basic") {
-        console.log(`[PROXY] Authentication failed (${response.status}) for ${endpoint}, retrying...`);
-        const { clearAuthSession } = await import("./auth");
-        await clearAuthSession();
-        await new Promise(resolve => setTimeout(resolve, 200));
-        return await proxyRequest(endpoint, options, retryCount + 1);
-      } else {
-        console.error(`[PROXY] Authentication failed for ${endpoint}: ${response.status}`);
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
       }
     }
     
@@ -847,8 +927,8 @@ export async function registerRoutes(
       if (req.query.eventTypes) queryParams.set("EventTypes", req.query.eventTypes as string);
       
       const data = await proxyRequest(`/Interface/Analytics/Search?${queryParams.toString()}`);
-      const events = extractDigifortData(data, "Events");
-      res.json(Array.isArray(events) ? events : []);
+      const events = extractAlerts(data);
+      res.json(events);
     } catch (error) {
       upstreamError(res, error);
     }
@@ -864,8 +944,7 @@ export async function registerRoutes(
   app.get("/api/analytics/events/recent", async (req, res) => {
     try {
       const data = await proxyRequest("/Interface/Analytics/Search");
-      const events = extractDigifortData(data, "Events");
-      const eventsArray = Array.isArray(events) ? events : [];
+      const eventsArray = extractAlerts(data);
       res.json(eventsArray.slice(0, 10));
     } catch (error) {
       upstreamError(res, error);
@@ -884,6 +963,50 @@ export async function registerRoutes(
       // Use mock server's Analytics/Chart endpoint
       const data = await proxyRequest("/Interface/Analytics/Chart");
       res.json(data);
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  /**
+   * GET /api/alarms
+   *
+   * All alerts/alarms from mock Digifort Analytics/Search.
+   * Query: region, site, alarmStatus (active|closed)
+   */
+  app.get("/api/alarms", async (req, res) => {
+    try {
+      const queryParams = new URLSearchParams();
+      if (req.query.region) queryParams.set("Region", req.query.region as string);
+      if (req.query.site) queryParams.set("Site", req.query.site as string);
+      if (req.query.alarmStatus) queryParams.set("AlarmStatus", (req.query.alarmStatus as string).toUpperCase());
+
+      const endpoint = queryParams.toString()
+        ? `/Interface/Analytics/Search?${queryParams.toString()}`
+        : "/Interface/Analytics/Search";
+      const data = await proxyRequest(endpoint);
+      res.json(extractAlerts(data));
+    } catch (error) {
+      upstreamError(res, error);
+    }
+  });
+
+  /**
+   * GET /api/alarms/summary
+   *
+   * Regional active/closed alarm counts for pie charts (mock: /Interface/Alarms/GetSummary).
+   */
+  app.get("/api/alarms/summary", async (req, res) => {
+    try {
+      const data = await proxyRequest("/Interface/Alarms/GetSummary").catch(async () => {
+        const search = await proxyRequest("/Interface/Analytics/Search");
+        return buildAlarmSummaryFromAlerts(extractAlerts(search));
+      });
+      if (data?.totals && data?.regions) {
+        res.json(data);
+        return;
+      }
+      res.json(transformAlarmSummary(data));
     } catch (error) {
       upstreamError(res, error);
     }

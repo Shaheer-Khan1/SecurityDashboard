@@ -104,9 +104,15 @@ export function RecentEvents({ events, isLoading }: RecentEventsProps) {
                         <Badge variant={severity} className="text-xs">
                           {event.eventType.replace(/_/g, " ")}
                         </Badge>
+                        {(event as any).alarmStatus && (
+                          <Badge variant={(event as any).alarmStatus === "active" ? "destructive" : "secondary"} className="text-xs capitalize">
+                            {(event as any).alarmStatus}
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-xs text-muted-foreground mt-1">
-                        {event.zone && `Zone: ${event.zone} • `}
+                        {(event as any).region && `${(event as any).region} · ${(event as any).site} · `}
+                        {event.zone && `Zone: ${event.zone} · `}
                         {formatDistanceToNow(new Date(event.timestamp), { addSuffix: true })}
                       </p>
                     </div>

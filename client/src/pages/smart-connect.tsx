@@ -972,7 +972,7 @@ export default function SmartConnectPage() {
             <ConnectionStatusPill status={sseStatus} />
           </div>
           <p className="text-sm text-muted-foreground mt-0.5">
-            DigifortSmartConnectEvent receiver — real-time event stream via SSE
+            Digifort Smart Connect — real-time event stream via SSE
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
